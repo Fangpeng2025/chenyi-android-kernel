@@ -25,7 +25,7 @@ include_directories(include)
 file(GLOB OCR_SRC src/*.cpp)
 
 # 创建库
-add_library(RapidOcr SHARED ${OCR_SRC})
+add_library(RapidOcr SHARED ${OCR_SRC} rapidocr_jni.cpp)
 
 # 查找 log 库
 find_library(log-lib log)
