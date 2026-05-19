@@ -167,6 +167,23 @@ data class Status(
 }
 
 /**
+ * 内核配置更新
+ */
+data class KernelConfig(
+    val apiEndpoint: String,
+    val apiKey: String,
+    val modelName: String
+) {
+    fun toJson(): String {
+        val json = org.json.JSONObject()
+        json.put("endpoint", apiEndpoint)
+        json.put("api_key", apiKey)
+        json.put("model", modelName)
+        return json.toString()
+    }
+}
+
+/**
  * JSONObject 扩展：转换为 Map
  */
 fun org.json.JSONObject.toMap(): Map<String, Any?> {
