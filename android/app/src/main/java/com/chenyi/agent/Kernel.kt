@@ -84,6 +84,21 @@ data class Result(
                 error = obj.optString("error").takeIf { it.isNotEmpty() }
             )
         }
+
+        fun ok(data: Map<String, Any?>): Result = Result(true, data, null)
+        fun error(msg: String): Result = Result(false, null, msg)
+    }
+
+    fun toJson(): String {
+        val json = org.json.JSONObject()
+        json.put("success", success)
+        if (data != null) {
+            json.put("data", org.json.JSONObject(data))
+        }
+        if (error != null) {
+            json.put("error", error)
+        }
+        return json.toString()
     }
 }
 
