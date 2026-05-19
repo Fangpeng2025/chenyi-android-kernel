@@ -1,8 +1,8 @@
 //! JNI 接口 - Android 平台支持
 
 use jni::JNIEnv;
-use jni::objects::{JClass, JString, JObject};
-use jni::sys::{jboolean, jstring, jobject};
+use jni::objects::{JClass, JString};
+use jni::sys::{jboolean, jstring};
 use parking_lot::Mutex;
 use std::sync::OnceLock;
 use tokio::runtime::Runtime;
@@ -15,9 +15,6 @@ static KERNEL: OnceLock<Mutex<Option<AgentKernel>>> = OnceLock::new();
 
 /// 全局 Tokio Runtime
 static RUNTIME: OnceLock<Runtime> = OnceLock::new();
-
-/// JNI 环境（用于回调）
-static JNI_ENV: OnceLock<Mutex<Option<usize>>> = OnceLock::new();
 
 /// 获取或初始化 Runtime
 fn get_runtime() -> &'static Runtime {
@@ -75,31 +72,49 @@ pub extern "system" fn Java_com_chenyi_agent_Kernel_nativeChat(
         Err(_) => return error_response(&mut env, "获取消息失败"),
     };
 
+    eprintln!("[JNI] 收到消息: {}", message);
+
     // 获取内核
     let cell = match KERNEL.get() {
         Some(c) => c,
-        None => return error_response(&mut env, "内核未初始化"),
+        None => {
+            eprintln!("[JNI] 错误: 内核未初始化");
+            return error_response(&mut env, "内核未初始化");
+        }
     };
 
-    let guard = cell.lock();
-    let kernel = match guard.as_ref() {
-        Some(k) => k,
-        None => return error_response(&mut env, "内核未初始化"),
-    };
+    eprintln!("[JNI] 开始执行 chat");
 
     // 使用全局 tokio runtime 执行异步
     let rt = get_runtime();
+    
+    // 直接在锁内执行（避免 async block）
+    let guard = cell.lock();
+    let kernel = match guard.as_ref() {
+        Some(k) => k,
+        None => {
+            eprintln!("[JNI] 错误: 内核未初始化");
+            return error_response(&mut env, "内核未初始化");
+        }
+    };
+    
     let result = rt.block_on(kernel.chat(&message));
+
+    eprintln!("[JNI] chat 执行完成");
 
     match result {
         Ok(response) => {
+            eprintln!("[JNI] 响应成功: {} 字节", response.len());
             let json = serde_json::json!({
                 "success": true,
                 "response": response
             });
             json_to_jstring(&mut env, &json)
         }
-        Err(e) => error_response(&mut env, &e.to_string()),
+        Err(e) => {
+            eprintln!("[JNI] 错误: {}", e);
+            error_response(&mut env, &e.to_string())
+        }
     }
 }
 
@@ -127,22 +142,22 @@ pub extern "system" fn Java_com_chenyi_agent_Kernel_nativeExecuteTool(
         None => return error_response(&mut env, "内核未初始化"),
     };
 
-    let guard = cell.lock();
-    let kernel = match guard.as_ref() {
-        Some(k) => k,
-        None => return error_response(&mut env, "内核未初始化"),
-    };
-
     // 执行工具
-    match kernel.execute_tool(&tool, &params) {
-        Ok(result) => {
-            let json = serde_json::json!({
-                "success": true,
-                "data": result
-            });
-            json_to_jstring(&mut env, &json)
+    let guard = cell.lock();
+    match guard.as_ref() {
+        Some(kernel) => {
+            match kernel.execute_tool(&tool, &params) {
+                Ok(result) => {
+                    let json = serde_json::json!({
+                        "success": true,
+                        "data": result
+                    });
+                    json_to_jstring(&mut env, &json)
+                }
+                Err(e) => error_response(&mut env, &e.to_string()),
+            }
         }
-        Err(e) => error_response(&mut env, &e.to_string()),
+        None => error_response(&mut env, "内核未初始化"),
     }
 }
 
@@ -203,6 +218,7 @@ fn json_to_jstring(env: &mut JNIEnv, json: &serde_json::Value) -> jstring {
 }
 
 fn error_response(env: &mut JNIEnv, msg: &str) -> jstring {
+    eprintln!("[JNI] 错误响应: {}", msg);
     let json = serde_json::json!({
         "success": false,
         "error": msg
