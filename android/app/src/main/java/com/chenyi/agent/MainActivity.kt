@@ -198,7 +198,7 @@ fun MainScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Icon(
-                        imageVector = if (status.contains("错误")) Icons.Default.Error else Icons.Default.CheckCircle,
+                        imageVector = if (status.contains("错误")) Icons.Default.Warning else Icons.Default.CheckCircle,
                         contentDescription = null,
                         tint = if (status.contains("错误")) 
                             MaterialTheme.colorScheme.error 
@@ -238,7 +238,7 @@ fun MainScreen(
                                 horizontalAlignment = Alignment.CenterHorizontally
                             ) {
                                 Icon(
-                                    Icons.Default.Chat,
+                                    Icons.Default.Person,
                                     contentDescription = null,
                                     modifier = Modifier.size(48.dp),
                                     tint = MaterialTheme.colorScheme.primary
