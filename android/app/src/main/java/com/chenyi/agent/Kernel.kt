@@ -109,6 +109,7 @@ class Kernel(private val context: Context) {
  */
 data class Result(
     val success: Boolean,
+    val response: String?,  // 添加 response 字段
     val data: Map<String, Any?>?,
     val error: String?
 ) {
@@ -117,18 +118,22 @@ data class Result(
             val obj = org.json.JSONObject(json)
             return Result(
                 success = obj.optBoolean("success", false),
+                response = obj.optString("response").takeIf { it.isNotEmpty() },
                 data = obj.optJSONObject("data")?.toMap(),
                 error = obj.optString("error").takeIf { it.isNotEmpty() }
             )
         }
 
-        fun ok(data: Map<String, Any?>): Result = Result(true, data, null)
-        fun error(msg: String): Result = Result(false, null, msg)
+        fun ok(data: Map<String, Any?>): Result = Result(true, null, data, null)
+        fun error(msg: String): Result = Result(false, null, null, msg)
     }
 
     fun toJson(): String {
         val json = org.json.JSONObject()
         json.put("success", success)
+        if (response != null) {
+            json.put("response", response)
+        }
         if (data != null) {
             json.put("data", org.json.JSONObject(data))
         }

@@ -172,7 +172,7 @@ fun MainScreen(
                                         }
                                         isLoading = false
                                         if (result.success) {
-                                            val response = result.data?.get("response") as? String ?: "无响应"
+                                            val response = result.response ?: "无响应"
                                             messages = messages + Message("assistant", response, System.currentTimeMillis())
                                             status = "内核已就绪"
                                         } else {
