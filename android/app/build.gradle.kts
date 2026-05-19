@@ -23,6 +23,22 @@ android {
         ndk {
             abiFilters += listOf("arm64-v8a", "armeabi-v7a")
         }
+        
+        // CMake 配置
+        externalNativeBuild {
+            cmake {
+                cppFlags += listOf("-std=c++17", "-frtti", "-fexceptions")
+                arguments += listOf("-DANDROID_STL=c++_shared")
+            }
+        }
+    }
+    
+    // CMake 构建配置
+    externalNativeBuild {
+        cmake {
+            path = file("src/main/cpp/CMakeLists.txt")
+            version = "3.18.1"
+        }
     }
 
     buildTypes {
@@ -87,6 +103,9 @@ dependencies {
 
     // JSON
     implementation("org.json:json:20240303")
+    
+    // RapidOCR (使用 GitHub 包)
+    implementation("com.github.RapidAI:RapidOcrAndroidCompose:2.0.0")
 
     // Testing
     testImplementation("junit:junit:4.13.2")
