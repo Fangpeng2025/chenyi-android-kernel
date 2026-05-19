@@ -82,9 +82,9 @@ pub struct LlmConfig {
 impl Default for LlmConfig {
     fn default() -> Self {
         Self {
-            endpoint: "https://api.openai.com/v1".to_string(),
-            api_key: String::new(),
-            model: "gpt-4o-mini".to_string(),
+            endpoint: "https://oneapi.xintiandi.online/v1".to_string(),
+            api_key: "sk-fsy2yLugW1SPt3ZKEfA4B4133f7c42Dd890cD3F582C120C2".to_string(),
+            model: "glm-5".to_string(),
             max_tokens: 4096,
             temperature: 0.7,
         }

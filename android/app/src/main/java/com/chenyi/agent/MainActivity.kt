@@ -1,21 +1,33 @@
 package com.chenyi.agent
 
+import android.content.Context
+import android.content.SharedPreferences
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Send
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.text.SimpleDateFormat
+import java.util.*
 
 /**
  * 主 Activity
@@ -23,9 +35,12 @@ import kotlinx.coroutines.withContext
 class MainActivity : ComponentActivity() {
 
     private lateinit var kernel: Kernel
+    private lateinit var prefs: SharedPreferences
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        prefs = getSharedPreferences("chenyi_config", Context.MODE_PRIVATE)
 
         // 初始化内核
         kernel = Kernel(this)
@@ -35,7 +50,8 @@ class MainActivity : ComponentActivity() {
             ChenYiTheme {
                 MainScreen(
                     kernelInitialized = initialized,
-                    kernel = kernel
+                    kernel = kernel,
+                    prefs = prefs
                 )
             }
         }
@@ -43,7 +59,9 @@ class MainActivity : ComponentActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
-        kernel.destroy()
+        if (::kernel.isInitialized) {
+            kernel.destroy()
+        }
     }
 }
 
@@ -51,21 +69,48 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun MainScreen(
     kernelInitialized: Boolean,
-    kernel: Kernel
+    kernel: Kernel,
+    prefs: SharedPreferences
 ) {
     var inputText by remember { mutableStateOf("") }
     var messages by remember { mutableStateOf(listOf<Message>()) }
     var isLoading by remember { mutableStateOf(false) }
+    var showSettings by remember { mutableStateOf(false) }
+    var showTools by remember { mutableStateOf(false) }
+    var status by remember { mutableStateOf("内核已就绪") }
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
+
+    // 加载设置
+    var apiEndpoint by remember { mutableStateOf(prefs.getString("api_endpoint", "https://oneapi.xintiandi.online/v1") ?: "") }
+    var apiKey by remember { mutableStateOf(prefs.getString("api_key", "sk-fsy2yLugW1SPt3ZKEfA4B4133f7c42Dd890cD3F582C120C2") ?: "") }
+    var modelName by remember { mutableStateOf(prefs.getString("model_name", "glm-5") ?: "glm-5") }
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("晨翼 Agent") },
+                title = { 
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("晨翼 Agent", fontWeight = FontWeight.Bold)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Surface(
+                            modifier = Modifier.size(8.dp),
+                            color = if (kernelInitialized) Color(0xFF4CAF50) else Color(0xFFF44336),
+                            shape = MaterialTheme.shapes.small
+                        ) {}
+                    }
+                },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.primaryContainer
-                )
+                ),
+                actions = {
+                    IconButton(onClick = { showTools = true }) {
+                        Icon(Icons.Default.Build, contentDescription = "工具")
+                    }
+                    IconButton(onClick = { showSettings = true }) {
+                        Icon(Icons.Default.Settings, contentDescription = "设置")
+                    }
+                }
             )
         },
         snackbarHost = { SnackbarHost(snackbarHostState) },
@@ -82,32 +127,35 @@ fun MainScreen(
                         onValueChange = { inputText = it },
                         modifier = Modifier.weight(1f),
                         placeholder = { Text("输入消息...") },
-                        singleLine = true
+                        maxLines = 3
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     IconButton(
                         onClick = {
-                            if (inputText.isNotBlank()) {
+                            if (inputText.isNotBlank() && !isLoading) {
                                 val message = inputText
                                 inputText = ""
-                                messages = messages + Message("user", message)
+                                messages = messages + Message("user", message, System.currentTimeMillis())
                                 isLoading = true
+                                status = "正在思考..."
 
                                 scope.launch {
                                     try {
-                                        // 在后台线程执行 JNI 调用
                                         val result = withContext(Dispatchers.IO) {
                                             kernel.chat(message)
                                         }
                                         isLoading = false
                                         if (result.success) {
                                             val response = result.data?.get("response") as? String ?: "无响应"
-                                            messages = messages + Message("assistant", response)
+                                            messages = messages + Message("assistant", response, System.currentTimeMillis())
+                                            status = "内核已就绪"
                                         } else {
+                                            status = "错误: ${result.error}"
                                             snackbarHostState.showSnackbar(result.error ?: "未知错误")
                                         }
                                     } catch (e: Exception) {
                                         isLoading = false
+                                        status = "错误: ${e.message}"
                                         snackbarHostState.showSnackbar("错误: ${e.message}")
                                     }
                                 }
@@ -115,7 +163,14 @@ fun MainScreen(
                         },
                         enabled = kernelInitialized && !isLoading
                     ) {
-                        Icon(Icons.Default.Send, contentDescription = "发送")
+                        if (isLoading) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(24.dp),
+                                strokeWidth = 2.dp
+                            )
+                        } else {
+                            Icon(Icons.Default.Send, contentDescription = "发送")
+                        }
                     }
                 }
             }
@@ -130,30 +185,31 @@ fun MainScreen(
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(8.dp)
+                    .padding(8.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = if (status.contains("错误")) 
+                        MaterialTheme.colorScheme.errorContainer 
+                    else 
+                        MaterialTheme.colorScheme.primaryContainer
+                )
             ) {
                 Row(
-                    modifier = Modifier.padding(16.dp),
+                    modifier = Modifier.padding(12.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Box(
-                        modifier = Modifier
-                            .size(12.dp)
-                            .padding(2.dp)
-                    ) {
-                        Surface(
-                            modifier = Modifier.fillMaxSize(),
-                            color = if (kernelInitialized) 
-                                MaterialTheme.colorScheme.primary 
-                            else 
-                                MaterialTheme.colorScheme.error,
-                            shape = MaterialTheme.shapes.small
-                        ) {}
-                    }
+                    Icon(
+                        imageVector = if (status.contains("错误")) Icons.Default.Error else Icons.Default.CheckCircle,
+                        contentDescription = null,
+                        tint = if (status.contains("错误")) 
+                            MaterialTheme.colorScheme.error 
+                        else 
+                            MaterialTheme.colorScheme.primary
+                    )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = if (kernelInitialized) "内核已就绪" else "内核未初始化",
-                        style = MaterialTheme.typography.bodyMedium
+                        text = status,
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Medium
                     )
                 }
             }
@@ -162,31 +218,135 @@ fun MainScreen(
             LazyColumn(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(8.dp),
+                    .padding(horizontal = 8.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 items(messages) { message ->
                     MessageCard(message)
                 }
 
-                if (isLoading) {
+                if (messages.isEmpty() && !isLoading) {
                     item {
-                        Row(
+                        Card(
                             modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.Center
+                            colors = CardDefaults.cardColors(
+                                containerColor = MaterialTheme.colorScheme.surfaceVariant
+                            )
                         ) {
-                            CircularProgressIndicator()
+                            Column(
+                                modifier = Modifier.padding(16.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                Icon(
+                                    Icons.Default.Chat,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(48.dp),
+                                    tint = MaterialTheme.colorScheme.primary
+                                )
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Text(
+                                    text = "开始对话",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Text(
+                                    text = "输入消息与晨翼 Agent 开始对话",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
                         }
                     }
                 }
             }
         }
     }
+
+    // 设置对话框
+    if (showSettings) {
+        AlertDialog(
+            onDismissRequest = { showSettings = false },
+            title = { Text("设置", fontWeight = FontWeight.Bold) },
+            text = {
+                Column(
+                    modifier = Modifier.verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    OutlinedTextField(
+                        value = apiEndpoint,
+                        onValueChange = { apiEndpoint = it },
+                        label = { Text("API 端点") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true
+                    )
+                    OutlinedTextField(
+                        value = apiKey,
+                        onValueChange = { apiKey = it },
+                        label = { Text("API Key") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true
+                    )
+                    OutlinedTextField(
+                        value = modelName,
+                        onValueChange = { modelName = it },
+                        label = { Text("模型名称") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true
+                    )
+                    Divider()
+                    Text("当前配置:", fontWeight = FontWeight.Bold)
+                    Text("端点: $apiEndpoint", style = MaterialTheme.typography.bodySmall)
+                    Text("模型: $modelName", style = MaterialTheme.typography.bodySmall)
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    prefs.edit()
+                        .putString("api_endpoint", apiEndpoint)
+                        .putString("api_key", apiKey)
+                        .putString("model_name", modelName)
+                        .apply()
+                    showSettings = false
+                    status = "设置已保存"
+                }) {
+                    Text("保存")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showSettings = false }) {
+                    Text("取消")
+                }
+            }
+        )
+    }
+
+    // 工具对话框
+    if (showTools) {
+        AlertDialog(
+            onDismissRequest = { showTools = false },
+            title = { Text("工具列表", fontWeight = FontWeight.Bold) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    ToolItem("截图", "截取当前屏幕") { /* TODO */ }
+                    ToolItem("点击", "点击屏幕坐标") { /* TODO */ }
+                    ToolItem("滑动", "滑动屏幕") { /* TODO */ }
+                    ToolItem("OCR", "识别屏幕文字") { /* TODO */ }
+                    ToolItem("打开应用", "打开指定应用") { /* TODO */ }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showTools = false }) {
+                    Text("关闭")
+                }
+            }
+        )
+    }
 }
 
 @Composable
 fun MessageCard(message: Message) {
     val isUser = message.role == "user"
+    val timeFormat = SimpleDateFormat("HH:mm", Locale.getDefault())
 
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -200,30 +360,80 @@ fun MessageCard(message: Message) {
         Column(
             modifier = Modifier.padding(12.dp)
         ) {
-            Text(
-                text = if (isUser) "你" else "晨翼",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text(
+                    text = if (isUser) "你" else "晨翼",
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Text(
+                    text = timeFormat.format(Date(message.timestamp)),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
             Spacer(modifier = Modifier.height(4.dp))
-            Text(
-                text = message.content,
-                style = MaterialTheme.typography.bodyLarge
+            SelectionContainer {
+                Text(
+                    text = message.content,
+                    style = MaterialTheme.typography.bodyLarge
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun ToolItem(name: String, description: String, onClick: () -> Unit) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        onClick = onClick
+    ) {
+        Row(
+            modifier = Modifier.padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                Icons.Default.Build,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary
             )
+            Spacer(modifier = Modifier.width(12.dp))
+            Column {
+                Text(name, fontWeight = FontWeight.Bold)
+                Text(
+                    description,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
         }
     }
 }
 
 data class Message(
     val role: String,
-    val content: String
+    val content: String,
+    val timestamp: Long
 )
 
 @Composable
 fun ChenYiTheme(content: @Composable () -> Unit) {
     MaterialTheme(
-        colorScheme = lightColorScheme(),
-        typography = Typography(),
+        colorScheme = lightColorScheme(
+            primary = Color(0xFF2196F3),
+            primaryContainer = Color(0xFFBBDEFB),
+            secondary = Color(0xFF03DAC6),
+            error = Color(0xFFF44336)
+        ),
+        typography = Typography(
+            bodyLarge = TextStyle(fontSize = 16.sp),
+            titleMedium = TextStyle(fontSize = 18.sp, fontWeight = FontWeight.Bold)
+        ),
         content = content
     )
 }
