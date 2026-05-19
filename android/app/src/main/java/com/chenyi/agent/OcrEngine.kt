@@ -3,28 +3,63 @@ package com.chenyi.agent
 import android.content.Context
 import android.graphics.Bitmap
 import android.util.Log
-import com.benjaminwan.ocrlibrary.OcrEngine as RapidOcrEngine
-import com.benjaminwan.ocrlibrary.OcrResult as RapidOcrResult
-import com.benjaminwan.ocrlibrary.TextBlock
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import java.io.File
+import java.io.FileOutputStream
+import java.net.URL
 
 /**
- * OCR 引擎 - 使用 RapidOCR
+ * OCR 引擎 - 使用 RapidOCR（自动下载模型）
  */
 class OcrEngine(private val context: Context) {
 
     companion object {
         private const val TAG = "OcrEngine"
+        
+        // 模型文件列表
+        private val MODEL_FILES = listOf(
+            "ch_PP-OCRv3_det_infer.onnx",
+            "ch_ppocr_mobile_v2.0_cls_infer.onnx", 
+            "ch_PP-OCRv3_rec_infer.onnx",
+            "ppocr_keys_v1.txt"
+        )
+        
+        // 模型下载地址（使用国内镜像）
+        private const val MODEL_BASE_URL = "https://hf-mirror.com/RapidAI/RapidOcrOnnxLibrary/resolve/main/models/"
+        
+        // 备用地址
+        private const val MODEL_BACKUP_URL = "https://huggingface.co/RapidAI/RapidOcrOnnxLibrary/resolve/main/models/"
     }
 
     private var initialized = false
-    private var rapidOcr: RapidOcrEngine? = null
+    private var rapidOcr: com.benjaminwan.ocrlibrary.OcrEngine? = null
 
     /**
-     * 初始化 OCR
+     * 初始化 OCR（自动下载模型）
      */
-    fun init(): Boolean {
-        return try {
-            rapidOcr = RapidOcrEngine(context)
+    suspend fun init(): Boolean = withContext(Dispatchers.IO) {
+        try {
+            // 1. 检查模型文件
+            val modelsDir = File(context.filesDir, "ocr_models")
+            if (!modelsDir.exists()) {
+                modelsDir.mkdirs()
+            }
+            
+            // 2. 下载缺失的模型文件
+            for (modelFile in MODEL_FILES) {
+                val file = File(modelsDir, modelFile)
+                if (!file.exists()) {
+                    Log.i(TAG, "下载模型: $modelFile")
+                    if (!downloadModel(modelFile, file)) {
+                        Log.e(TAG, "模型下载失败: $modelFile")
+                        return@withContext false
+                    }
+                }
+            }
+            
+            // 3. 初始化 RapidOCR
+            rapidOcr = com.benjaminwan.ocrlibrary.OcrEngine(context)
             
             // 设置参数
             rapidOcr?.padding = 50
@@ -35,7 +70,7 @@ class OcrEngine(private val context: Context) {
             rapidOcr?.mostAngle = true
             
             initialized = true
-            Log.d(TAG, "RapidOCR 初始化成功")
+            Log.i(TAG, "RapidOCR 初始化成功")
             true
         } catch (e: Exception) {
             Log.e(TAG, "RapidOCR 初始化失败: ${e.message}")
@@ -43,6 +78,69 @@ class OcrEngine(private val context: Context) {
             false
         }
     }
+
+    /**
+     * 下载模型文件
+     */
+    private fun downloadModel(fileName: String, destFile: File): Boolean {
+        return try {
+            // 尝试主地址
+            val url1 = "$MODEL_BASE_URL$fileName"
+            if (downloadFile(url1, destFile)) {
+                Log.i(TAG, "模型下载成功（主地址）: $fileName")
+                return true
+            }
+            
+            // 尝试备用地址
+            val url2 = "$MODEL_BACKUP_URL$fileName"
+            if (downloadFile(url2, destFile)) {
+                Log.i(TAG, "模型下载成功（备用地址）: $fileName")
+                return true
+            }
+            
+            Log.e(TAG, "模型下载失败: $fileName")
+            false
+        } catch (e: Exception) {
+            Log.e(TAG, "下载模型异常: $fileName - ${e.message}")
+            false
+        }
+    }
+
+    /**
+     * 下载文件
+     */
+    private fun downloadFile(urlStr: String, destFile: File): Boolean {
+        return try {
+            val url = URL(urlStr)
+            val conn = url.openConnection()
+            conn.connectTimeout = 30000
+            conn.readTimeout = 60000
+            
+            val input = conn.getInputStream()
+            val output = FileOutputStream(destFile)
+            
+            val buffer = ByteArray(8192)
+            var bytesRead: Int
+            
+            while (input.read(buffer).also { bytesRead = it } != -1) {
+                output.write(buffer, 0, bytesRead)
+            }
+            
+            output.close()
+            input.close()
+            
+            true
+        } catch (e: Exception) {
+            Log.w(TAG, "下载失败: $urlStr - ${e.message}")
+            destFile.delete()
+            false
+        }
+    }
+
+    /**
+     * 检查是否已初始化
+     */
+    fun isInitialized(): Boolean = initialized
 
     /**
      * 识别图片中的文字
@@ -93,7 +191,7 @@ class OcrEngine(private val context: Context) {
     /**
      * 解析 RapidOCR 结果
      */
-    private fun parseRapidOcrResult(result: RapidOcrResult?): OcrResult {
+    private fun parseRapidOcrResult(result: com.benjaminwan.ocrlibrary.OcrResult?): OcrResult {
         if (result == null) {
             return OcrResult.error("识别结果为空")
         }
@@ -102,10 +200,8 @@ class OcrEngine(private val context: Context) {
         val fullText = StringBuilder()
 
         for (textBlock in result.textBlocks) {
-            // 获取文本框的坐标
             val boxPoints = textBlock.boxPoint
             if (boxPoints.isNotEmpty()) {
-                // 计算边界框
                 var minX = Int.MAX_VALUE
                 var minY = Int.MAX_VALUE
                 var maxX = Int.MIN_VALUE

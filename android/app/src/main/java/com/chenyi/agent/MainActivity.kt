@@ -39,6 +39,7 @@ class MainActivity : ComponentActivity() {
     private lateinit var kernel: Kernel
     private lateinit var prefs: SharedPreferences
     private lateinit var screenshotManager: ScreenshotManager
+    private lateinit var ocrEngine: OcrEngine
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -52,6 +53,9 @@ class MainActivity : ComponentActivity() {
         // 初始化截图管理器
         screenshotManager = ScreenshotManager(this)
         screenshotManager.init()
+        
+        // 初始化 OCR 引擎
+        ocrEngine = OcrEngine(this)
 
         setContent {
             ChenYiTheme {
@@ -60,6 +64,7 @@ class MainActivity : ComponentActivity() {
                     kernel = kernel,
                     prefs = prefs,
                     screenshotManager = screenshotManager,
+                    ocrEngine = ocrEngine,
                     onRequestScreenshotPermission = {
                         screenshotManager.requestPermission(this)
                     },
@@ -113,9 +118,28 @@ fun MainScreen(
     kernel: Kernel,
     prefs: SharedPreferences,
     screenshotManager: ScreenshotManager,
+    ocrEngine: OcrEngine,
     onRequestScreenshotPermission: () -> Unit,
     onCheckAccessibility: () -> Boolean
 ) {
+    val context = LocalContext.current
+
+    // 加载设置
+    var apiEndpoint by remember { mutableStateOf(prefs.getString("api_endpoint", "https://oneapi.xintiandi.online/v1") ?: "") }
+    var apiKey by remember { mutableStateOf(prefs.getString("api_key", "sk-fsy2yLugW1SPt3ZKEfA4B4133f7c42Dd890cD3F582C120C2") ?: "") }
+    var modelName by remember { mutableStateOf(prefs.getString("model_name", "glm-5") ?: "glm-5") }
+    
+    // OCR 初始化状态
+    var ocrInitialized by remember { mutableStateOf(false) }
+    var ocrStatus by remember { mutableStateOf("初始化 OCR...") }
+
+    // 启动时初始化 OCR
+    LaunchedEffect(Unit) {
+        ocrStatus = "正在下载 OCR 模型..."
+        ocrInitialized = ocrEngine.init()
+        ocrStatus = if (ocrInitialized) "OCR 就绪" else "OCR 初始化失败"
+    }
+    
     var inputText by remember { mutableStateOf("") }
     var messages by remember { mutableStateOf(listOf<Message>()) }
     var isLoading by remember { mutableStateOf(false) }
@@ -124,12 +148,6 @@ fun MainScreen(
     var status by remember { mutableStateOf("内核已就绪") }
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
-    val context = LocalContext.current
-
-    // 加载设置
-    var apiEndpoint by remember { mutableStateOf(prefs.getString("api_endpoint", "https://oneapi.xintiandi.online/v1") ?: "") }
-    var apiKey by remember { mutableStateOf(prefs.getString("api_key", "sk-fsy2yLugW1SPt3ZKEfA4B4133f7c42Dd890cD3F582C120C2") ?: "") }
-    var modelName by remember { mutableStateOf(prefs.getString("model_name", "glm-5") ?: "glm-5") }
 
     Scaffold(
         topBar = {
