@@ -25,7 +25,7 @@ impl ToolRegistry {
         // 注册 Android 工具
         registry.register_android_tools();
         
-        eprintln!("[Tools] 已注册 {} 个工具", registry.tools.len());
+        log::info!("[Tools] 已注册 {} 个工具", registry.tools.len());
         
         registry
     }
@@ -144,7 +144,7 @@ impl ToolRegistry {
     
     /// 执行工具（暂时返回占位符）
     pub fn execute(&self, name: &str, params: &str) -> Result<serde_json::Value> {
-        eprintln!("[Tools] 执行工具: {} 参数: {}", name, params);
+        log::info!("[Tools] 执行工具: {} 参数: {}", name, params);
         
         // 检查工具是否存在
         if !self.tools.contains_key(name) {

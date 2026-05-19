@@ -162,8 +162,8 @@ impl LlmClient {
         
         let url = format!("{}/chat/completions", self.config.endpoint);
         
-        eprintln!("[LLM] 请求 URL: {}", url);
-        eprintln!("[LLM] 请求 Body: {}", serde_json::to_string_pretty(&request).unwrap_or_default());
+        log::info!("[LLM] 请求 URL: {}", url);
+        log::debug!("[LLM] 请求 Body: {}", serde_json::to_string_pretty(&request).unwrap_or_default());
         
         let response = self.client
             .post(&url)
@@ -175,12 +175,12 @@ impl LlmClient {
             .map_err(|e| Error::Other(format!("HTTP 请求失败: {}", e)))?;
         
         let status = response.status();
-        eprintln!("[LLM] 响应状态: {}", status);
+        log::info!("[LLM] 响应状态: {}", status);
         
         let body = response.text().await
             .map_err(|e| Error::Other(format!("读取响应失败: {}", e)))?;
         
-        eprintln!("[LLM] 响应 Body: {}", body.chars().take(500).collect::<String>());
+        log::debug!("[LLM] 响应 Body: {}", body.chars().take(500).collect::<String>());
         
         if !status.is_success() {
             return Err(Error::Other(format!("API 错误 ({}): {}", status, body)));

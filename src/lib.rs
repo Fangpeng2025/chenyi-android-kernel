@@ -45,6 +45,17 @@ static KERNEL: OnceCell<Mutex<AgentKernel>> = OnceCell::new();
 
 /// 初始化内核
 pub fn init(config: KernelConfig) -> Result<()> {
+    // 初始化 Android 日志
+    #[cfg(target_os = "android")]
+    {
+        android_logger::init_once(
+            android_logger::Config::default()
+                .with_max_level(log::LevelFilter::Debug)
+                .with_tag("ChenyiKernel"),
+        );
+        log::info!("[Kernel] Android 日志已初始化");
+    }
+    
     let kernel = AgentKernel::new(config)?;
     KERNEL.set(Mutex::new(kernel))
         .map_err(|_| Error::AlreadyInitialized)?;

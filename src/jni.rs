@@ -31,12 +31,12 @@ pub extern "system" fn Java_com_chenyi_agent_Kernel_nativeInit(
     let data_dir: String = match env.get_string(&data_dir) {
         Ok(s) => s.into(),
         Err(_) => {
-            eprintln!("[JNI] 获取数据目录失败");
+            log::error!("[JNI] 获取数据目录失败");
             return false as jboolean;
         }
     };
 
-    eprintln!("[JNI] 初始化内核，数据目录: {}", data_dir);
+    log::info!("[JNI] 初始化内核，数据目录: {}", data_dir);
 
     // 创建配置
     let config = KernelConfig {
@@ -50,11 +50,11 @@ pub extern "system" fn Java_com_chenyi_agent_Kernel_nativeInit(
             let cell = KERNEL.get_or_init(|| Mutex::new(None));
             let mut guard = cell.lock();
             *guard = Some(kernel);
-            eprintln!("[JNI] 内核初始化成功");
+            log::info!("[JNI] 内核初始化成功");
             true as jboolean
         }
         Err(e) => {
-            eprintln!("[JNI] 内核初始化失败: {}", e);
+            log::error!("[JNI] 内核初始化失败: {}", e);
             false as jboolean
         }
     }
@@ -72,18 +72,18 @@ pub extern "system" fn Java_com_chenyi_agent_Kernel_nativeChat(
         Err(_) => return error_response(&mut env, "获取消息失败"),
     };
 
-    eprintln!("[JNI] 收到消息: {}", message);
+    log::info!("[JNI] 收到消息: {}", message);
 
     // 获取内核
     let cell = match KERNEL.get() {
         Some(c) => c,
         None => {
-            eprintln!("[JNI] 错误: 内核未初始化");
+            log::error!("[JNI] 错误: 内核未初始化");
             return error_response(&mut env, "内核未初始化");
         }
     };
 
-    eprintln!("[JNI] 开始执行 chat");
+    log::info!("[JNI] 开始执行 chat");
 
     // 使用全局 tokio runtime 执行异步
     let rt = get_runtime();
@@ -93,18 +93,18 @@ pub extern "system" fn Java_com_chenyi_agent_Kernel_nativeChat(
     let kernel = match guard.as_ref() {
         Some(k) => k,
         None => {
-            eprintln!("[JNI] 错误: 内核未初始化");
+            log::error!("[JNI] 错误: 内核未初始化");
             return error_response(&mut env, "内核未初始化");
         }
     };
     
     let result = rt.block_on(kernel.chat(&message));
 
-    eprintln!("[JNI] chat 执行完成");
+    log::info!("[JNI] chat 执行完成");
 
     match result {
         Ok(response) => {
-            eprintln!("[JNI] 响应成功: {} 字节", response.len());
+            log::info!("[JNI] 响应成功: {} 字节", response.len());
             let json = serde_json::json!({
                 "success": true,
                 "response": response
@@ -112,7 +112,7 @@ pub extern "system" fn Java_com_chenyi_agent_Kernel_nativeChat(
             json_to_jstring(&mut env, &json)
         }
         Err(e) => {
-            eprintln!("[JNI] 错误: {}", e);
+            log::error!("[JNI] 错误: {}", e);
             error_response(&mut env, &e.to_string())
         }
     }
