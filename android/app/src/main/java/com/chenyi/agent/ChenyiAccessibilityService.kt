@@ -265,29 +265,3 @@ class ChenyiAccessibilityService : AccessibilityService() {
 
     private fun error(msg: String): Result = Result.error(msg)
 }
-
-/**
- * 工具执行结果
- */
-data class Result(
-    val success: Boolean,
-    val data: Map<String, Any?>?,
-    val error: String?
-) {
-    companion object {
-        fun ok(data: Map<String, Any?>): Result = Result(true, data, null)
-        fun error(msg: String): Result = Result(false, null, msg)
-    }
-
-    fun toJson(): String {
-        val json = JSONObject()
-        json.put("success", success)
-        if (data != null) {
-            json.put("data", JSONObject(data))
-        }
-        if (error != null) {
-            json.put("error", error)
-        }
-        return json.toString()
-    }
-}
