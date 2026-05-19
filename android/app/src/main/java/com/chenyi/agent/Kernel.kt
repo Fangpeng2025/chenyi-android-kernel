@@ -15,6 +15,7 @@ class Kernel(private val context: Context) {
 
     // JNI 方法
     private external fun nativeInit(dataDir: String): Boolean
+    private external fun nativeRegisterToolCallback(callbackPtr: Long)
     private external fun nativeChat(message: String): String
     private external fun nativeExecuteTool(tool: String, params: String): String
     private external fun nativeGetStatus(): String
@@ -25,7 +26,24 @@ class Kernel(private val context: Context) {
      */
     fun init(): Boolean {
         val dataDir = context.filesDir.absolutePath
-        return nativeInit(dataDir)
+        val success = nativeInit(dataDir)
+        
+        if (success) {
+            // 注册工具回调
+            registerToolCallback()
+        }
+        
+        return success
+    }
+    
+    /**
+     * 注册工具回调（将 Kotlin 工具函数注册到 Rust）
+     */
+    private fun registerToolCallback() {
+        // 工具回调通过 ChenyiAccessibilityService 执行
+        // 这里传递一个标记，Rust 端会通过 JNI 回调回来
+        val callbackPtr = 0L // 占位符，实际通过 AccessibilityService 执行
+        nativeRegisterToolCallback(callbackPtr)
     }
 
     /**
@@ -49,6 +67,19 @@ class Kernel(private val context: Context) {
         }
         val json = nativeExecuteTool(tool, paramsJson)
         return Result.fromJson(json)
+    }
+    
+    /**
+     * 执行工具（通过 AccessibilityService）
+     */
+    fun executeToolViaService(tool: String, paramsJson: String): Result {
+        val service = ChenyiAccessibilityService.getInstance()
+        if (service != null) {
+            val json = service.executeTool(tool, paramsJson)
+            return Result.fromJson(json)
+        } else {
+            return Result.error("无障碍服务未连接")
+        }
     }
 
     /**
@@ -108,7 +139,8 @@ data class Result(
 data class Status(
     val initialized: Boolean,
     val dataDir: String,
-    val memoryEntries: Int
+    val memoryEntries: Int,
+    val toolsCount: Int
 ) {
     companion object {
         fun fromJson(json: String): Status {
@@ -116,7 +148,8 @@ data class Status(
             return Status(
                 initialized = obj.optBoolean("initialized", false),
                 dataDir = obj.optString("data_dir", ""),
-                memoryEntries = obj.optInt("memory_entries", 0)
+                memoryEntries = obj.optInt("memory_entries", 0),
+                toolsCount = obj.optInt("tools_count", 0)
             )
         }
     }

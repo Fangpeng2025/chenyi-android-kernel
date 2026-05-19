@@ -16,11 +16,12 @@ static KERNEL: OnceLock<Mutex<Option<AgentKernel>>> = OnceLock::new();
 /// 全局 Tokio Runtime
 static RUNTIME: OnceLock<Runtime> = OnceLock::new();
 
+/// JNI 工具回调（存储 Kotlin 端传递的回调函数指针）
+static JNI_TOOL_CALLBACK: OnceLock<Mutex<Option<usize>>> = OnceLock::new();
+
 /// 获取或初始化 Runtime
 fn get_runtime() -> &'static Runtime {
-    RUNTIME.get_or_init(|| {
-        Runtime::new().expect("Failed to create tokio runtime")
-    })
+    RUNTIME.get_or_init(|| Runtime::new().expect("Failed to create tokio runtime"))
 }
 
 /// 初始化内核
@@ -60,6 +61,18 @@ pub extern "system" fn Java_com_chenyi_agent_Kernel_nativeInit(
             false as jboolean
         }
     }
+}
+
+/// 注册工具回调
+#[no_mangle]
+pub extern "system" fn Java_com_chenyi_agent_Kernel_nativeRegisterToolCallback(
+    _env: JNIEnv,
+    _class: JClass,
+    callback_ptr: usize,
+) {
+    eprintln!("[JNI] 注册工具回调: {}", callback_ptr);
+    let cell = JNI_TOOL_CALLBACK.get_or_init(|| Mutex::new(None));
+    *cell.lock() = Some(callback_ptr);
 }
 
 /// 发送消息
@@ -134,7 +147,13 @@ pub extern "system" fn Java_com_chenyi_agent_Kernel_nativeExecuteTool(
 
     // 执行工具
     match kernel.execute_tool(&tool, &params) {
-        Ok(result) => json_to_jstring(&mut env, &result),
+        Ok(result) => {
+            let json = serde_json::json!({
+                "success": true,
+                "data": result
+            });
+            json_to_jstring(&mut env, &json)
+        }
         Err(e) => error_response(&mut env, &e.to_string()),
     }
 }
