@@ -1,0 +1,29 @@
+# 晨翼Agent Android 内核 - 交叉编译配置
+
+[target.aarch64-linux-android]
+linker = "aarch64-linux-android29-clang"
+
+[target.armv7-linux-androideabi]
+linker = "armv7-linux-androideabi29-clang"
+
+[target.i686-linux-android]
+linker = "i686-linux-android29-clang"
+
+[target.x86_64-linux-android]
+linker = "x86_64-linux-android29-clang"
+
+# Android 特定配置
+[env]
+# 设置 ANDROID_NDK_HOME 环境变量
+# 例如: ANDROID_NDK_HOME = "/path/to/ndk/25.2.9519653"
+
+# 编译优化
+[profile.release]
+opt-level = 3
+lto = true
+strip = true
+codegen-units = 1
+
+[profile.dev]
+opt-level = 0
+debug = true
