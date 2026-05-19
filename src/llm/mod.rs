@@ -183,19 +183,36 @@ impl LlmClient {
         log::debug!("[LLM] 响应 Body: {}", body.chars().take(500).collect::<String>());
         
         if !status.is_success() {
+            log::error!("[LLM] API 错误: {} - {}", status, body);
             return Err(Error::Other(format!("API 错误 ({}): {}", status, body)));
         }
         
-        let result: ChatResponse = serde_json::from_str(&body)
-            .map_err(|e| Error::Other(format!("解析响应失败: {} - {}", e, body.chars().take(200).collect::<String>())))?;
+        // 尝试解析响应
+        let result: ChatResponse = match serde_json::from_str(&body) {
+            Ok(r) => r,
+            Err(e) => {
+                log::error!("[LLM] 解析响应失败: {} - 响应内容: {}", e, body.chars().take(500).collect::<String>());
+                return Err(Error::Other(format!("解析响应失败: {} - 响应内容: {}", e, body.chars().take(200).collect::<String>())));
+            }
+        };
         
-        Ok(result.choices.first()
+        let message = result.choices.first()
             .map(|c| c.message.clone())
-            .unwrap_or_else(|| ResponseMessage {
-                role: "assistant".to_string(),
-                content: Some("无响应".to_string()),
-                tool_calls: vec![],
-            }))
+            .unwrap_or_else(|| {
+                log::warn!("[LLM] 响应中没有 choices，返回空响应");
+                ResponseMessage {
+                    role: "assistant".to_string(),
+                    content: Some("无响应".to_string()),
+                    tool_calls: vec![],
+                }
+            });
+        
+        log::info!("[LLM] 响应成功: content={}, tool_calls={}", 
+            message.content.as_ref().map(|c| c.len()).unwrap_or(0),
+            message.tool_calls.len()
+        );
+        
+        Ok(message)
     }
     
     /// 简单聊天（无工具）

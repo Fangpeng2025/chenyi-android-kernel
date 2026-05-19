@@ -80,6 +80,9 @@ class ChenyiAccessibilityService : AccessibilityService() {
             "list_apps" -> listApps()
             "ocr" -> ocr(params)
             "find_text" -> findText(params)
+            "wait" -> wait(params)
+            "get_screen_size" -> getScreenSize()
+            "scroll" -> scroll(params)
             else -> error("未知工具: $tool")
         }
 
@@ -241,9 +244,23 @@ class ChenyiAccessibilityService : AccessibilityService() {
     // ============ 按键 ============
 
     private fun pressKey(params: JSONObject): Result {
-        val keycode = params.getInt("keycode")
-
         return try {
+            val keycode = when {
+                params.has("keycode") -> params.getInt("keycode")
+                params.has("key") -> when (params.getString("key")) {
+                    "home" -> GLOBAL_ACTION_HOME
+                    "back" -> GLOBAL_ACTION_BACK
+                    "recent" -> GLOBAL_ACTION_RECENTS
+                    "notifications" -> GLOBAL_ACTION_NOTIFICATIONS
+                    "quick_settings" -> GLOBAL_ACTION_QUICK_SETTINGS
+                    "power_dialog" -> GLOBAL_ACTION_POWER_DIALOGS
+                    "lock_screen" -> GLOBAL_ACTION_LOCK_SCREEN
+                    "take_screenshot" -> GLOBAL_ACTION_TAKE_SCREENSHOT
+                    else -> return Result.error("未知按键: ${params.getString("key")}")
+                }
+                else -> return Result.error("缺少按键参数")
+            }
+
             val success = performGlobalAction(keycode)
             Log.d(TAG, "按键: $keycode -> $success")
             Result.ok(mapOf("keycode" to keycode, "success" to success))
@@ -404,6 +421,76 @@ class ChenyiAccessibilityService : AccessibilityService() {
         } catch (e: Exception) {
             Log.e(TAG, "查找文本失败", e)
             Result.error(e.message ?: "查找文本失败")
+        }
+    }
+
+    // ============ 等待 ============
+
+    private fun wait(params: JSONObject): Result {
+        val duration = params.optLong("duration", 1000)
+
+        return try {
+            Thread.sleep(duration)
+            Log.d(TAG, "等待: ${duration}ms")
+            Result.ok(mapOf("duration" to duration, "success" to true))
+        } catch (e: Exception) {
+            Log.e(TAG, "等待失败", e)
+            Result.error(e.message ?: "等待失败")
+        }
+    }
+
+    // ============ 获取屏幕尺寸 ============
+
+    private fun getScreenSize(): Result {
+        return try {
+            val width = screenshotManager?.screenWidth ?: 0
+            val height = screenshotManager?.screenHeight ?: 0
+            Log.d(TAG, "屏幕尺寸: ${width}x${height}")
+            Result.ok(mapOf("width" to width, "height" to height))
+        } catch (e: Exception) {
+            Log.e(TAG, "获取屏幕尺寸失败", e)
+            Result.error(e.message ?: "获取屏幕尺寸失败")
+        }
+    }
+
+    // ============ 滚动 ============
+
+    private fun scroll(params: JSONObject): Result {
+        val direction = params.getString("direction")
+        val distance = params.optInt("distance", 500)
+
+        return try {
+            val width = screenshotManager?.screenWidth ?: 1080
+            val height = screenshotManager?.screenHeight ?: 1920
+            val centerX = width / 2
+            val centerY = height / 2
+
+            val (startX, startY, endX, endY) = when (direction) {
+                "up" -> listOf(centerX, centerY + distance / 2, centerX, centerY - distance / 2)
+                "down" -> listOf(centerX, centerY - distance / 2, centerX, centerY + distance / 2)
+                "left" -> listOf(centerX + distance / 2, centerY, centerX - distance / 2, centerY)
+                "right" -> listOf(centerX - distance / 2, centerY, centerX + distance / 2, centerY)
+                else -> return Result.error("无效方向: $direction")
+            }
+
+            val path = Path()
+            path.moveTo(startX.toFloat(), startY.toFloat())
+            path.lineTo(endX.toFloat(), endY.toFloat())
+
+            val gesture = GestureDescription.Builder()
+                .addStroke(GestureDescription.StrokeDescription(path, 0, 300))
+                .build()
+
+            val success = dispatchGesture(gesture, null, null)
+            Log.d(TAG, "滚动: $direction ${distance}px -> $success")
+            Result.ok(mapOf(
+                "direction" to direction,
+                "distance" to distance,
+                "success" to success
+            ))
+        } catch (e: Exception) {
+            Log.e(TAG, "滚动失败", e)
+            Result.error(e.message ?: "滚动失败")
         }
     }
 

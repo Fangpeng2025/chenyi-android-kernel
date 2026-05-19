@@ -88,16 +88,18 @@ pub extern "system" fn Java_com_chenyi_agent_Kernel_nativeChat(
     // 使用全局 tokio runtime 执行异步
     let rt = get_runtime();
     
-    // 直接在锁内执行（避免 async block）
-    let guard = cell.lock();
-    let kernel = match guard.as_ref() {
-        Some(k) => k,
-        None => {
-            log::error!("[JNI] 错误: 内核未初始化");
-            return error_response(&mut env, "内核未初始化");
+    // 先获取内核的 Arc 克隆，然后释放锁
+    let kernel = {
+        let guard = cell.lock();
+        match guard.as_ref() {
+            Some(k) => k.clone(),
+            None => {
+                log::error!("[JNI] 错误: 内核未初始化");
+                return error_response(&mut env, "内核未初始化");
+            }
         }
     };
-    
+    // 锁已释放，安全执行异步
     let result = rt.block_on(kernel.chat(&message));
 
     log::info!("[JNI] chat 执行完成");
@@ -196,29 +198,33 @@ pub extern "system" fn Java_com_chenyi_agent_Kernel_nativeGetStatus(
 
 /// 销毁内核
 #[no_mangle]
-pub extern "system" fn Java_com_chenyi_agent_Kernel_nativeDestroy(
-    _env: JNIEnv,
-    _class: JClass,
-) {
-    eprintln!("[JNI] 销毁内核");
+pub extern "system" fn Java_com_chenyi_agent_Kernel_nativeDestroy(_env: JNIEnv, _class: JClass) {
+    log::info!("[JNI] 销毁内核");
 
     if let Some(cell) = KERNEL.get() {
         let mut guard = cell.lock();
         *guard = None;
     }
 
-    eprintln!("[JNI] 内核已销毁");
+    log::info!("[JNI] 内核已销毁");
 }
 
 // ============ 辅助函数 ============
 
 fn json_to_jstring(env: &mut JNIEnv, json: &serde_json::Value) -> jstring {
     let s = serde_json::to_string(json).unwrap_or_else(|_| "{}".to_string());
-    env.new_string(&s).unwrap().into_raw()
+    match env.new_string(&s) {
+        Ok(jstr) => jstr.into_raw(),
+        Err(e) => {
+            log::error!("[JNI] 创建字符串失败: {:?}", e);
+            // 返回空 JSON 对象
+            env.new_string("{}").unwrap().into_raw()
+        }
+    }
 }
 
 fn error_response(env: &mut JNIEnv, msg: &str) -> jstring {
-    eprintln!("[JNI] 错误响应: {}", msg);
+    log::error!("[JNI] 错误响应: {}", msg);
     let json = serde_json::json!({
         "success": false,
         "error": msg
