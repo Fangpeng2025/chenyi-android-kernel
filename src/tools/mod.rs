@@ -2,16 +2,10 @@
 
 use crate::types::{Result, Error};
 use std::collections::HashMap;
-use std::sync::Arc;
-use parking_lot::Mutex;
-
-/// JNI 回调类型
-type JniCallback = fn(tool: &str, params: &str) -> Result<serde_json::Value>;
 
 /// 工具注册表
 pub struct ToolRegistry {
     tools: HashMap<String, Tool>,
-    jni_callback: Arc<Mutex<Option<JniCallback>>>,
 }
 
 /// 工具定义
@@ -26,11 +20,12 @@ impl ToolRegistry {
     pub fn new() -> Self {
         let mut registry = Self {
             tools: HashMap::new(),
-            jni_callback: Arc::new(Mutex::new(None)),
         };
         
         // 注册 Android 工具
         registry.register_android_tools();
+        
+        eprintln!("[Tools] 已注册 {} 个工具", registry.tools.len());
         
         registry
     }
@@ -38,169 +33,130 @@ impl ToolRegistry {
     /// 注册 Android 工具
     fn register_android_tools(&mut self) {
         // 截图
-        self.tools.insert("screenshot".to_string(), Tool {
-            name: "screenshot".to_string(),
-            description: "截取当前屏幕".to_string(),
-            parameters: serde_json::json!({
-                "type": "object",
-                "properties": {
-                    "region": {
-                        "type": "object",
-                        "description": "可选的截图区域",
-                        "properties": {
-                            "x": {"type": "integer"},
-                            "y": {"type": "integer"},
-                            "width": {"type": "integer"},
-                            "height": {"type": "integer"}
-                        }
-                    }
-                }
-            }),
-        });
+        self.register("screenshot", "截取当前屏幕", serde_json::json!({
+            "type": "object",
+            "properties": {}
+        }));
         
         // 点击
-        self.tools.insert("tap".to_string(), Tool {
-            name: "tap".to_string(),
-            description: "点击屏幕指定坐标".to_string(),
-            parameters: serde_json::json!({
-                "type": "object",
-                "properties": {
-                    "x": {"type": "integer", "description": "X 坐标"},
-                    "y": {"type": "integer", "description": "Y 坐标"}
-                },
-                "required": ["x", "y"]
-            }),
-        });
+        self.register("tap", "点击屏幕指定坐标", serde_json::json!({
+            "type": "object",
+            "properties": {
+                "x": {"type": "integer", "description": "X 坐标"},
+                "y": {"type": "integer", "description": "Y 坐标"}
+            },
+            "required": ["x", "y"]
+        }));
         
         // 长按
-        self.tools.insert("long_press".to_string(), Tool {
-            name: "long_press".to_string(),
-            description: "长按屏幕指定坐标".to_string(),
-            parameters: serde_json::json!({
-                "type": "object",
-                "properties": {
-                    "x": {"type": "integer", "description": "X 坐标"},
-                    "y": {"type": "integer", "description": "Y 坐标"},
-                    "duration": {"type": "integer", "description": "持续时间（毫秒）", "default": 500}
-                },
-                "required": ["x", "y"]
-            }),
-        });
+        self.register("long_press", "长按屏幕指定坐标", serde_json::json!({
+            "type": "object",
+            "properties": {
+                "x": {"type": "integer", "description": "X 坐标"},
+                "y": {"type": "integer", "description": "Y 坐标"},
+                "duration": {"type": "integer", "description": "持续时间（毫秒）", "default": 1000}
+            },
+            "required": ["x", "y"]
+        }));
         
         // 滑动
-        self.tools.insert("swipe".to_string(), Tool {
-            name: "swipe".to_string(),
-            description: "滑动屏幕".to_string(),
-            parameters: serde_json::json!({
-                "type": "object",
-                "properties": {
-                    "start_x": {"type": "integer", "description": "起始 X 坐标"},
-                    "start_y": {"type": "integer", "description": "起始 Y 坐标"},
-                    "end_x": {"type": "integer", "description": "结束 X 坐标"},
-                    "end_y": {"type": "integer", "description": "结束 Y 坐标"},
-                    "duration": {"type": "integer", "description": "持续时间（毫秒）", "default": 300}
-                },
-                "required": ["start_x", "start_y", "end_x", "end_y"]
-            }),
-        });
+        self.register("swipe", "从起点滑动到终点", serde_json::json!({
+            "type": "object",
+            "properties": {
+                "start_x": {"type": "integer", "description": "起点 X 坐标"},
+                "start_y": {"type": "integer", "description": "起点 Y 坐标"},
+                "end_x": {"type": "integer", "description": "终点 X 坐标"},
+                "end_y": {"type": "integer", "description": "终点 Y 坐标"},
+                "duration": {"type": "integer", "description": "持续时间（毫秒）", "default": 300}
+            },
+            "required": ["start_x", "start_y", "end_x", "end_y"]
+        }));
         
         // 输入文本
-        self.tools.insert("type_text".to_string(), Tool {
-            name: "type_text".to_string(),
-            description: "在当前输入框中输入文本".to_string(),
-            parameters: serde_json::json!({
-                "type": "object",
-                "properties": {
-                    "text": {"type": "string", "description": "要输入的文本"}
-                },
-                "required": ["text"]
-            }),
-        });
+        self.register("type_text", "在当前焦点输入文本", serde_json::json!({
+            "type": "object",
+            "properties": {
+                "text": {"type": "string", "description": "要输入的文本"}
+            },
+            "required": ["text"]
+        }));
         
         // 按键
-        self.tools.insert("press_key".to_string(), Tool {
-            name: "press_key".to_string(),
-            description: "按下按键".to_string(),
-            parameters: serde_json::json!({
-                "type": "object",
-                "properties": {
-                    "keycode": {"type": "integer", "description": "按键代码"}
-                },
-                "required": ["keycode"]
-            }),
-        });
+        self.register("press_key", "按下系统按键", serde_json::json!({
+            "type": "object",
+            "properties": {
+                "key": {"type": "string", "description": "按键名称：home, back, recent"}
+            },
+            "required": ["key"]
+        }));
         
         // 打开应用
-        self.tools.insert("open_app".to_string(), Tool {
-            name: "open_app".to_string(),
-            description: "打开指定应用".to_string(),
-            parameters: serde_json::json!({
-                "type": "object",
-                "properties": {
-                    "package": {"type": "string", "description": "应用包名"}
-                },
-                "required": ["package"]
-            }),
-        });
+        self.register("open_app", "打开指定应用", serde_json::json!({
+            "type": "object",
+            "properties": {
+                "package": {"type": "string", "description": "应用包名"}
+            },
+            "required": ["package"]
+        }));
         
         // 关闭应用
-        self.tools.insert("close_app".to_string(), Tool {
-            name: "close_app".to_string(),
-            description: "关闭当前应用（返回桌面）".to_string(),
-            parameters: serde_json::json!({"type": "object"}),
-        });
+        self.register("close_app", "关闭当前应用", serde_json::json!({
+            "type": "object",
+            "properties": {}
+        }));
         
         // 获取当前应用
-        self.tools.insert("current_app".to_string(), Tool {
-            name: "current_app".to_string(),
-            description: "获取当前前台应用的包名".to_string(),
-            parameters: serde_json::json!({"type": "object"}),
-        });
+        self.register("current_app", "获取当前前台应用信息", serde_json::json!({
+            "type": "object",
+            "properties": {}
+        }));
         
         // 列出应用
-        self.tools.insert("list_apps".to_string(), Tool {
-            name: "list_apps".to_string(),
-            description: "列出所有已安装的应用".to_string(),
-            parameters: serde_json::json!({"type": "object"}),
-        });
+        self.register("list_apps", "列出已安装的应用", serde_json::json!({
+            "type": "object",
+            "properties": {}
+        }));
         
         // OCR
-        self.tools.insert("ocr".to_string(), Tool {
-            name: "ocr".to_string(),
-            description: "识别屏幕文字".to_string(),
-            parameters: serde_json::json!({"type": "object"}),
-        });
+        self.register("ocr", "识别屏幕上的文字", serde_json::json!({
+            "type": "object",
+            "properties": {}
+        }));
         
         // 查找文本
-        self.tools.insert("find_text".to_string(), Tool {
-            name: "find_text".to_string(),
-            description: "查找屏幕上的文本位置".to_string(),
-            parameters: serde_json::json!({
-                "type": "object",
-                "properties": {
-                    "text": {"type": "string", "description": "要查找的文本"}
-                },
-                "required": ["text"]
-            }),
+        self.register("find_text", "在屏幕上查找指定文本的位置", serde_json::json!({
+            "type": "object",
+            "properties": {
+                "text": {"type": "string", "description": "要查找的文本"}
+            },
+            "required": ["text"]
+        }));
+    }
+    
+    /// 注册工具
+    fn register(&mut self, name: &str, description: &str, parameters: serde_json::Value) {
+        self.tools.insert(name.to_string(), Tool {
+            name: name.to_string(),
+            description: description.to_string(),
+            parameters,
         });
     }
     
-    /// 设置 JNI 回调
-    pub fn set_jni_callback(&self, callback: JniCallback) {
-        *self.jni_callback.lock() = Some(callback);
-    }
-    
-    /// 执行工具
+    /// 执行工具（暂时返回占位符）
     pub fn execute(&self, name: &str, params: &str) -> Result<serde_json::Value> {
-        let tool = self.tools.get(name)
-            .ok_or_else(|| Error::Tool(format!("未知工具: {}", name)))?;
+        eprintln!("[Tools] 执行工具: {} 参数: {}", name, params);
         
-        // 使用 JNI 回调执行
-        if let Some(callback) = *self.jni_callback.lock() {
-            callback(name, params)
-        } else {
-            Err(Error::Tool("JNI 回调未注册".to_string()))
+        // 检查工具是否存在
+        if !self.tools.contains_key(name) {
+            return Err(Error::Tool(format!("未知工具: {}", name)));
         }
+        
+        // 暂时返回占位符响应（需要 JNI 回调才能真正执行）
+        Ok(serde_json::json!({
+            "success": true,
+            "message": format!("工具 {} 已调用（需要连接到 Android 无障碍服务才能真正执行）", name),
+            "params": params
+        }))
     }
     
     /// 列出所有工具（LLM 格式）
