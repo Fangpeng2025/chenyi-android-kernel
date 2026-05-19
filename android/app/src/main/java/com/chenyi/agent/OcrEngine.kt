@@ -3,34 +3,57 @@ package com.chenyi.agent
 import android.content.Context
 import android.graphics.Bitmap
 import android.util.Log
-import com.google.mlkit.vision.common.InputImage
-import com.google.mlkit.vision.text.TextRecognition
-import com.google.mlkit.vision.text.chinese.ChineseTextRecognizerOptions
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.ByteArrayOutputStream
 import java.io.File
 
 /**
- * OCR 引擎 - 使用 Google ML Kit
+ * OCR 引擎 - 使用 RapidOCR
  * 
- * 支持中文和英文识别
+ * 需要集成 RapidOCR 的 native 库和模型文件
  */
 class OcrEngine(private val context: Context) {
 
     companion object {
         private const val TAG = "OcrEngine"
+        
+        // 加载 native 库
+        init {
+            try {
+                System.loadLibrary("rapidocr")
+                Log.d(TAG, "RapidOCR 库加载成功")
+            } catch (e: UnsatisfiedLinkError) {
+                Log.e(TAG, "RapidOCR 库加载失败: ${e.message}")
+            }
+        }
     }
 
+    // JNI 方法
+    private external fun nativeInit(modelPath: String): Boolean
+    private external fun nativeOcr(imageData: ByteArray, width: Int, height: Int): String
+    private external fun nativeOcrFromPath(imagePath: String): String
+
     private var initialized = false
-    private val recognizer = TextRecognition.getClient(ChineseTextRecognizerOptions.Builder().build())
 
     /**
      * 初始化 OCR
      */
     fun init(): Boolean {
-        initialized = true
-        Log.d(TAG, "OCR 初始化成功（Google ML Kit）")
-        return true
+        val modelDir = File(context.filesDir, "ocr_models")
+        if (!modelDir.exists()) {
+            modelDir.mkdirs()
+        }
+        
+        initialized = try {
+            nativeInit(modelDir.absolutePath)
+        } catch (e: Exception) {
+            Log.e(TAG, "OCR 初始化失败: ${e.message}")
+            false
+        }
+        
+        Log.d(TAG, "OCR 初始化: $initialized")
+        return initialized
     }
 
     /**
@@ -42,31 +65,14 @@ class OcrEngine(private val context: Context) {
         }
 
         return try {
-            val image = InputImage.fromBitmap(bitmap, 0)
-            
-            // 使用 CountDownLatch 等待异步结果
-            val latch = java.util.concurrent.CountDownLatch(1)
-            var result: OcrResult? = null
-            
-            recognizer.process(image)
-                .addOnSuccessListener { visionText ->
-                    result = parseVisionText(visionText)
-                    latch.countDown()
-                }
-                .addOnFailureListener { e ->
-                    Log.e(TAG, "OCR 识别失败", e)
-                    result = OcrResult.error(e.message ?: "识别失败")
-                    latch.countDown()
-                }
-            
-            // 等待结果（最多 10 秒）
-            if (latch.await(10, java.util.concurrent.TimeUnit.SECONDS)) {
-                result ?: OcrResult.error("识别失败")
-            } else {
-                OcrResult.error("识别超时")
-            }
+            val stream = ByteArrayOutputStream()
+            bitmap.compress(Bitmap.CompressFormat.PNG, 100, stream)
+            val imageData = stream.toByteArray()
+
+            val json = nativeOcr(imageData, bitmap.width, bitmap.height)
+            parseResult(json)
         } catch (e: Exception) {
-            Log.e(TAG, "OCR 识别失败", e)
+            Log.e(TAG, "OCR 识别失败: ${e.message}")
             OcrResult.error(e.message ?: "识别失败")
         }
     }
@@ -80,52 +86,42 @@ class OcrEngine(private val context: Context) {
         }
 
         return try {
-            val bitmap = android.graphics.BitmapFactory.decodeFile(imagePath)
-            if (bitmap == null) {
-                return OcrResult.error("无法加载图片")
-            }
-            
-            val result = recognize(bitmap)
-            bitmap.recycle()
-            result
+            val json = nativeOcrFromPath(imagePath)
+            parseResult(json)
         } catch (e: Exception) {
-            Log.e(TAG, "OCR 识别失败", e)
+            Log.e(TAG, "OCR 识别失败: ${e.message}")
             OcrResult.error(e.message ?: "识别失败")
         }
     }
 
     /**
-     * 解析 ML Kit 的识别结果
+     * 解析 OCR 结果
      */
-    private fun parseVisionText(visionText: com.google.mlkit.vision.text.Text): OcrResult {
+    private fun parseResult(json: String): OcrResult {
+        val obj = JSONObject(json)
+        
+        if (!obj.optBoolean("success", false)) {
+            return OcrResult.error(obj.optString("error", "识别失败"))
+        }
+
+        val wordsArray = obj.optJSONArray("words") ?: JSONArray()
         val words = mutableListOf<OcrWord>()
         val fullText = StringBuilder()
 
-        // 遍历所有文本块
-        for (block in visionText.textBlocks) {
-            // 遍历块中的每一行
-            for (line in block.lines) {
-                // 遍历行中的每个元素
-                for (element in line.elements) {
-                    val boundingBox = element.boundingBox
-                    if (boundingBox != null) {
-                        val word = OcrWord(
-                            text = element.text,
-                            confidence = element.confidence ?: 0.9f,
-                            x = boundingBox.left,
-                            y = boundingBox.top,
-                            width = boundingBox.width(),
-                            height = boundingBox.height()
-                        )
-                        words.add(word)
-                        fullText.append(element.text).append(" ")
-                    }
-                }
-                fullText.append("\n")
-            }
+        for (i in 0 until wordsArray.length()) {
+            val wordObj = wordsArray.getJSONObject(i)
+            val word = OcrWord(
+                text = wordObj.getString("text"),
+                confidence = wordObj.getDouble("confidence").toFloat(),
+                x = wordObj.getInt("x"),
+                y = wordObj.getInt("y"),
+                width = wordObj.getInt("width"),
+                height = wordObj.getInt("height")
+            )
+            words.add(word)
+            fullText.append(word.text).append(" ")
         }
 
-        Log.d(TAG, "OCR 识别完成: ${words.size} 个文本块")
         return OcrResult(
             success = true,
             words = words,
