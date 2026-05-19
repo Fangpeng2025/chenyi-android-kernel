@@ -45,7 +45,7 @@ impl AgentKernel {
         ));
         
         // 初始化 LLM 客户端
-        let llm = Arc::new(LlmClient::new(config.llm.clone()));
+        let llm = Arc::new(LlmClient::new(config.llm.clone())?);
         
         // 初始化工具注册表
         let tools = Arc::new(ToolRegistry::new());
@@ -107,11 +107,9 @@ impl AgentKernel {
                 
                 // 将工具结果添加到消息
                 let content = response.content.as_deref().unwrap_or("");
-                messages.push(ChatMessage::assistant_with_tool_use(
+                messages.push(ChatMessage::assistant_with_tools(
                     content,
-                    &tool_call.id,
-                    &tool_call.function.name,
-                    &tool_call.function.arguments,
+                    response.tool_calls.clone(),
                 ));
                 
                 let result_json = match tool_result {

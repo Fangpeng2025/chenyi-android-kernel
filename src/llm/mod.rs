@@ -1,20 +1,8 @@
 //! LLM 客户端
 
-use crate::types::{LlmConfig, Result};
+use crate::types::{LlmConfig, Result, Error};
 use serde::{Deserialize, Serialize};
-
-/// LLM 错误
-#[derive(Debug, thiserror::Error)]
-pub enum LlmError {
-    #[error("HTTP 错误: {0}")]
-    Http(String),
-    
-    #[error("API 错误: {0}")]
-    Api(String),
-    
-    #[error("解析错误: {0}")]
-    Parse(String),
-}
+use std::time::Duration;
 
 /// 聊天消息
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -56,79 +44,87 @@ impl ChatMessage {
         }
     }
     
-    pub fn assistant_with_tool_use(content: &str, tool_call_id: &str, tool_name: &str, tool_args: &str) -> Self {
+    pub fn assistant_with_tools(content: &str, tool_calls: Vec<ToolCall>) -> Self {
         Self {
             role: "assistant".to_string(),
-            content: if content.is_empty() { None } else { Some(content.to_string()) },
-            tool_calls: Some(vec![ToolCall {
-                id: tool_call_id.to_string(),
-                r#type: "function".to_string(),
-                function: FunctionCall {
-                    name: tool_name.to_string(),
-                    arguments: tool_args.to_string(),
-                },
-            }]),
+            content: Some(content.to_string()),
+            tool_calls: Some(tool_calls),
             tool_call_id: None,
         }
     }
     
-    pub fn tool_result(tool_call_id: &str, content: &str) -> Self {
+    pub fn tool_result(id: &str, result: &str) -> Self {
         Self {
             role: "tool".to_string(),
-            content: Some(content.to_string()),
+            content: Some(result.to_string()),
             tool_calls: None,
-            tool_call_id: Some(tool_call_id.to_string()),
+            tool_call_id: Some(id.to_string()),
         }
     }
 }
 
-/// 工具调用
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ToolCall {
-    pub id: String,
-    pub r#type: String,
-    pub function: FunctionCall,
-}
-
-/// 函数调用
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct FunctionCall {
-    pub name: String,
-    pub arguments: String,
-}
-
 /// 工具定义
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ToolDefinition {
-    pub r#type: String,
+    #[serde(rename = "type")]
+    pub tool_type: String,
     pub function: ToolFunction,
 }
 
-#[derive(Debug, Clone, Serialize)]
+impl ToolDefinition {
+    pub fn new(name: &str, description: &str, parameters: serde_json::Value) -> Self {
+        Self {
+            tool_type: "function".to_string(),
+            function: ToolFunction {
+                name: name.to_string(),
+                description: description.to_string(),
+                parameters,
+            },
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ToolFunction {
     pub name: String,
     pub description: String,
     pub parameters: serde_json::Value,
 }
 
-/// LLM 响应
-#[derive(Debug, Clone, Deserialize)]
-pub struct ChatResponse {
-    pub choices: Vec<Choice>,
+/// 工具调用
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ToolCall {
+    pub id: String,
+    #[serde(rename = "type")]
+    pub call_type: String,
+    pub function: ToolCallFunction,
 }
 
-#[derive(Debug, Clone, Deserialize)]
-pub struct Choice {
-    pub message: ResponseMessage,
-    pub finish_reason: Option<String>,
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ToolCallFunction {
+    pub name: String,
+    pub arguments: String,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+/// 响应消息
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ResponseMessage {
     pub role: String,
+    #[serde(default)]
     pub content: Option<String>,
     #[serde(default)]
     pub tool_calls: Vec<ToolCall>,
+}
+
+/// 聊天响应
+#[derive(Debug, Deserialize)]
+struct ChatResponse {
+    choices: Vec<Choice>,
+}
+
+#[derive(Debug, Deserialize)]
+struct Choice {
+    message: ResponseMessage,
 }
 
 /// LLM 客户端
@@ -138,14 +134,14 @@ pub struct LlmClient {
 }
 
 impl LlmClient {
-    pub fn new(config: LlmConfig) -> Self {
-        Self {
-            config,
-            client: reqwest::Client::builder()
-                .timeout(std::time::Duration::from_secs(60))
-                .build()
-                .unwrap(),
-        }
+    pub fn new(config: LlmConfig) -> Result<Self> {
+        let client = reqwest::Client::builder()
+            .timeout(Duration::from_secs(60))
+            .connect_timeout(Duration::from_secs(10))
+            .build()
+            .map_err(|e| Error::Other(format!("创建 HTTP 客户端失败: {}", e)))?;
+        
+        Ok(Self { config, client })
     }
     
     /// 发送聊天请求（带工具支持）
@@ -166,7 +162,8 @@ impl LlmClient {
         
         let url = format!("{}/chat/completions", self.config.endpoint);
         
-        eprintln!("[LLM] 请求: {}", url);
+        eprintln!("[LLM] 请求 URL: {}", url);
+        eprintln!("[LLM] 请求 Body: {}", serde_json::to_string_pretty(&request).unwrap_or_default());
         
         let response = self.client
             .post(&url)
@@ -175,19 +172,22 @@ impl LlmClient {
             .json(&request)
             .send()
             .await
-            .map_err(|e| crate::types::Error::Other(format!("HTTP 错误: {}", e)))?;
+            .map_err(|e| Error::Other(format!("HTTP 请求失败: {}", e)))?;
         
         let status = response.status();
+        eprintln!("[LLM] 响应状态: {}", status);
+        
         let body = response.text().await
-            .map_err(|e| crate::types::Error::Other(format!("读取响应失败: {}", e)))?;
+            .map_err(|e| Error::Other(format!("读取响应失败: {}", e)))?;
+        
+        eprintln!("[LLM] 响应 Body: {}", body.chars().take(500).collect::<String>());
         
         if !status.is_success() {
-            eprintln!("[LLM] 错误响应: {}", body);
-            return Err(crate::types::Error::Other(format!("API 错误 ({}): {}", status, body)));
+            return Err(Error::Other(format!("API 错误 ({}): {}", status, body)));
         }
         
         let result: ChatResponse = serde_json::from_str(&body)
-            .map_err(|e| crate::types::Error::Other(format!("解析响应失败: {} - {}", e, body)))?;
+            .map_err(|e| Error::Other(format!("解析响应失败: {} - {}", e, body.chars().take(200).collect::<String>())))?;
         
         Ok(result.choices.first()
             .map(|c| c.message.clone())
@@ -199,13 +199,8 @@ impl LlmClient {
     }
     
     /// 简单聊天（无工具）
-    pub async fn chat(&self, message: &str, context: &str) -> Result<String> {
-        let messages = vec![
-            ChatMessage::system("你是晨翼Agent，一个智能助手。"),
-            ChatMessage::user(&format!("{}\n\n{}", context, message)),
-        ];
-        
-        let response = self.chat_with_tools(&messages, vec![]).await?;
-        Ok(response.content.unwrap_or_else(|| "无响应".to_string()))
+    pub async fn chat(&self, messages: &[ChatMessage]) -> Result<String> {
+        let response = self.chat_with_tools(messages, vec![]).await?;
+        response.content.ok_or_else(|| Error::Other("无响应内容".to_string()))
     }
 }

@@ -19,7 +19,7 @@ pub enum Error {
     Storage(#[from] crate::storage::StorageError),
 
     #[error("LLM 错误: {0}")]
-    Llm(#[from] crate::llm::LlmError),
+    Llm(String),
 
     #[error("SQLite 错误: {0}")]
     Sqlite(#[from] rusqlite::Error),

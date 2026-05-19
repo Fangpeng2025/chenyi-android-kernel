@@ -206,14 +206,11 @@ impl ToolRegistry {
     /// 列出所有工具（LLM 格式）
     pub fn list_tools(&self) -> Vec<crate::llm::ToolDefinition> {
         self.tools.values().map(|tool| {
-            crate::llm::ToolDefinition {
-                r#type: "function".to_string(),
-                function: crate::llm::ToolFunction {
-                    name: tool.name.clone(),
-                    description: tool.description.clone(),
-                    parameters: tool.parameters.clone(),
-                },
-            }
+            crate::llm::ToolDefinition::new(
+                &tool.name,
+                &tool.description,
+                tool.parameters.clone(),
+            )
         }).collect()
     }
     
