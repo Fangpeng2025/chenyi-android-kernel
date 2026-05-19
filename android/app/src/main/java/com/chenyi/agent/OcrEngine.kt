@@ -36,6 +36,75 @@ class OcrEngine(private val context: Context) {
     private var rapidOcr: com.benjaminwan.ocrlibrary.OcrEngine? = null
 
     /**
+     * 初始化 OCR（同步版本，用于非协程环境）
+     */
+    fun initSync(): Boolean {
+        return try {
+            // 检查模型文件
+            val modelsDir = File(context.filesDir, "ocr_models")
+            if (!modelsDir.exists()) {
+                modelsDir.mkdirs()
+            }
+            
+            // 下载缺失的模型文件（同步下载）
+            for (modelFile in MODEL_FILES) {
+                val file = File(modelsDir, modelFile)
+                if (!file.exists()) {
+                    Log.i(TAG, "下载模型: $modelFile")
+                    if (!downloadModelSync(modelFile, file)) {
+                        Log.e(TAG, "模型下载失败: $modelFile")
+                        return false
+                    }
+                }
+            }
+            
+            // 初始化 RapidOCR
+            rapidOcr = com.benjaminwan.ocrlibrary.OcrEngine(context)
+            
+            // 设置参数
+            rapidOcr?.padding = 50
+            rapidOcr?.boxScoreThresh = 0.5f
+            rapidOcr?.boxThresh = 0.3f
+            rapidOcr?.unClipRatio = 1.6f
+            rapidOcr?.doAngle = true
+            rapidOcr?.mostAngle = true
+            
+            initialized = true
+            Log.i(TAG, "RapidOCR 初始化成功")
+            true
+        } catch (e: Exception) {
+            Log.e(TAG, "RapidOCR 初始化失败: ${e.message}")
+            initialized = false
+            false
+        }
+    }
+    
+    /**
+     * 同步下载模型文件
+     */
+    private fun downloadModelSync(fileName: String, destFile: File): Boolean {
+        return try {
+            val url1 = "$MODEL_BASE_URL$fileName"
+            if (downloadFile(url1, destFile)) {
+                Log.i(TAG, "模型下载成功（主地址）: $fileName")
+                return true
+            }
+            
+            val url2 = "$MODEL_BACKUP_URL$fileName"
+            if (downloadFile(url2, destFile)) {
+                Log.i(TAG, "模型下载成功（备用地址）: $fileName")
+                return true
+            }
+            
+            Log.e(TAG, "模型下载失败: $fileName")
+            false
+        } catch (e: Exception) {
+            Log.e(TAG, "下载模型异常: $fileName - ${e.message}")
+            false
+        }
+    }
+
+    /**
      * 初始化 OCR（自动下载模型）
      */
     suspend fun init(): Boolean = withContext(Dispatchers.IO) {

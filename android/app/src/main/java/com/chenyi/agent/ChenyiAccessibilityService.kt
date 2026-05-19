@@ -33,9 +33,11 @@ class ChenyiAccessibilityService : AccessibilityService() {
         super.onServiceConnected()
         instance = this
         
-        // 初始化 OCR
+        // 初始化 OCR（同步）
         ocrEngine = OcrEngine(applicationContext)
-        ocrEngine?.init()
+        Thread {
+            ocrEngine?.initSync()
+        }.start()
         
         // 初始化截图管理器
         screenshotManager = ScreenshotManager(applicationContext)
