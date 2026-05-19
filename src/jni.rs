@@ -10,7 +10,7 @@ use crate::agent::AgentKernel;
 use crate::types::KernelConfig;
 
 /// 全局内核实例
-static KERNEL: OnceCell<Mutex<Option<AgentKernel>>> = OnceCell::new();
+static KERNEL: OnceLock<Mutex<Option<AgentKernel>>> = OnceLock::new();
 
 /// 初始化内核
 #[no_mangle]
