@@ -23,6 +23,7 @@ class Kernel(private val context: Context) {
     private external fun nativeExecuteTool(tool: String, params: String): String
     private external fun nativeGetStatus(): String
     private external fun nativeDestroy()
+    private external fun nativeUpdateConfig(configJson: String): Boolean
 
     /**
      * 初始化内核
@@ -32,6 +33,16 @@ class Kernel(private val context: Context) {
         val success = nativeInit(dataDir)
         
         Log.d(TAG, "内核初始化: $success")
+        return success
+    }
+    
+    /**
+     * 更新配置
+     */
+    fun updateConfig(config: KernelConfig): Boolean {
+        val json = config.toJson()
+        val success = nativeUpdateConfig(json)
+        Log.d(TAG, "更新配置: $success")
         return success
     }
 

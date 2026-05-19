@@ -150,8 +150,6 @@ pub extern "system" fn Java_com_chenyi_agent_Kernel_nativeExecuteTool(
     });
     json_to_jstring(&mut env, &json)
 }
-    }
-}
 
 /// 获取内核状态
 #[no_mangle]
@@ -245,6 +243,65 @@ fn json_to_jstring(env: &mut JNIEnv, json: &serde_json::Value) -> jstring {
             log::error!("[JNI] 创建字符串失败: {:?}", e);
             // 返回空 JSON 对象
             env.new_string("{}").unwrap().into_raw()
+        }
+    }
+}
+
+/// 更新内核配置
+#[no_mangle]
+pub extern "system" fn Java_com_chenyi_agent_Kernel_nativeUpdateConfig(
+    mut env: JNIEnv,
+    _class: JClass,
+    config_json: JString,
+) -> jboolean {
+    log::info!("[JNI] 更新内核配置");
+    
+    let config_str: String = match env.get_string(&config_json) {
+        Ok(s) => s.into(),
+        Err(e) => {
+            log::error!("[JNI] 获取配置字符串失败: {:?}", e);
+            return false as jboolean;
+        }
+    };
+    
+    let cell = match KERNEL.get() {
+        Some(c) => c,
+        None => {
+            log::error!("[JNI] 内核未初始化");
+            return false as jboolean;
+        }
+    };
+    
+    let mut guard = cell.lock();
+    match guard.as_mut() {
+        Some(kernel) => {
+            // 解析配置 JSON
+            match serde_json::from_str::<serde_json::Value>(&config_str) {
+                Ok(config) => {
+                    // 更新 LLM 配置
+                    if let Some(endpoint) = config.get("endpoint").and_then(|v| v.as_str()) {
+                        kernel.llm.config.endpoint = endpoint.to_string();
+                        log::info!("[JNI] 更新 endpoint: {}", endpoint);
+                    }
+                    if let Some(api_key) = config.get("api_key").and_then(|v| v.as_str()) {
+                        kernel.llm.config.api_key = api_key.to_string();
+                        log::info!("[JNI] 更新 api_key: {}***", &api_key[..10.min(api_key.len())]);
+                    }
+                    if let Some(model) = config.get("model").and_then(|v| v.as_str()) {
+                        kernel.llm.config.model = model.to_string();
+                        log::info!("[JNI] 更新 model: {}", model);
+                    }
+                    true as jboolean
+                }
+                Err(e) => {
+                    log::error!("[JNI] 解析配置失败: {}", e);
+                    false as jboolean
+                }
+            }
+        }
+        None => {
+            log::error!("[JNI] 内核未初始化");
+            false as jboolean
         }
     }
 }
