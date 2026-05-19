@@ -3,74 +3,64 @@ package com.chenyi.agent
 import android.content.Context
 import android.graphics.Bitmap
 import android.util.Log
-import org.json.JSONArray
-import org.json.JSONObject
-import java.io.ByteArrayOutputStream
-import java.io.File
+import com.benjaminwan.ocrlibrary.OcrEngine as RapidOcrEngine
+import com.benjaminwan.ocrlibrary.OcrResult as RapidOcrResult
+import com.benjaminwan.ocrlibrary.TextBlock
 
 /**
  * OCR 引擎 - 使用 RapidOCR
- * 
- * 需要集成 RapidOCR 的 native 库和模型文件
  */
 class OcrEngine(private val context: Context) {
 
     companion object {
         private const val TAG = "OcrEngine"
-        
-        // 加载 native 库
-        init {
-            try {
-                System.loadLibrary("rapidocr")
-                Log.d(TAG, "RapidOCR 库加载成功")
-            } catch (e: UnsatisfiedLinkError) {
-                Log.e(TAG, "RapidOCR 库加载失败: ${e.message}")
-            }
-        }
     }
 
-    // JNI 方法
-    private external fun nativeInit(modelPath: String): Boolean
-    private external fun nativeOcr(imageData: ByteArray, width: Int, height: Int): String
-    private external fun nativeOcrFromPath(imagePath: String): String
-
     private var initialized = false
+    private var rapidOcr: RapidOcrEngine? = null
 
     /**
      * 初始化 OCR
      */
     fun init(): Boolean {
-        val modelDir = File(context.filesDir, "ocr_models")
-        if (!modelDir.exists()) {
-            modelDir.mkdirs()
-        }
-        
-        initialized = try {
-            nativeInit(modelDir.absolutePath)
+        return try {
+            rapidOcr = RapidOcrEngine(context)
+            
+            // 设置参数
+            rapidOcr?.padding = 50
+            rapidOcr?.boxScoreThresh = 0.5f
+            rapidOcr?.boxThresh = 0.3f
+            rapidOcr?.unClipRatio = 1.6f
+            rapidOcr?.doAngle = true
+            rapidOcr?.mostAngle = true
+            
+            initialized = true
+            Log.d(TAG, "RapidOCR 初始化成功")
+            true
         } catch (e: Exception) {
-            Log.e(TAG, "OCR 初始化失败: ${e.message}")
+            Log.e(TAG, "RapidOCR 初始化失败: ${e.message}")
+            initialized = false
             false
         }
-        
-        Log.d(TAG, "OCR 初始化: $initialized")
-        return initialized
     }
 
     /**
      * 识别图片中的文字
      */
     fun recognize(bitmap: Bitmap): OcrResult {
-        if (!initialized) {
+        if (!initialized || rapidOcr == null) {
             return OcrResult.error("OCR 未初始化")
         }
 
         return try {
-            val stream = ByteArrayOutputStream()
-            bitmap.compress(Bitmap.CompressFormat.PNG, 100, stream)
-            val imageData = stream.toByteArray()
-
-            val json = nativeOcr(imageData, bitmap.width, bitmap.height)
-            parseResult(json)
+            // 创建输出 Bitmap
+            val output = bitmap.copy(Bitmap.Config.ARGB_8888, true)
+            
+            // 执行 OCR
+            val result = rapidOcr?.detect(bitmap, output, 1024)
+            
+            // 解析结果
+            parseRapidOcrResult(result)
         } catch (e: Exception) {
             Log.e(TAG, "OCR 识别失败: ${e.message}")
             OcrResult.error(e.message ?: "识别失败")
@@ -86,8 +76,14 @@ class OcrEngine(private val context: Context) {
         }
 
         return try {
-            val json = nativeOcrFromPath(imagePath)
-            parseResult(json)
+            val bitmap = android.graphics.BitmapFactory.decodeFile(imagePath)
+            if (bitmap == null) {
+                return OcrResult.error("无法加载图片")
+            }
+            
+            val result = recognize(bitmap)
+            bitmap.recycle()
+            result
         } catch (e: Exception) {
             Log.e(TAG, "OCR 识别失败: ${e.message}")
             OcrResult.error(e.message ?: "识别失败")
@@ -95,33 +91,47 @@ class OcrEngine(private val context: Context) {
     }
 
     /**
-     * 解析 OCR 结果
+     * 解析 RapidOCR 结果
      */
-    private fun parseResult(json: String): OcrResult {
-        val obj = JSONObject(json)
-        
-        if (!obj.optBoolean("success", false)) {
-            return OcrResult.error(obj.optString("error", "识别失败"))
+    private fun parseRapidOcrResult(result: RapidOcrResult?): OcrResult {
+        if (result == null) {
+            return OcrResult.error("识别结果为空")
         }
 
-        val wordsArray = obj.optJSONArray("words") ?: JSONArray()
         val words = mutableListOf<OcrWord>()
         val fullText = StringBuilder()
 
-        for (i in 0 until wordsArray.length()) {
-            val wordObj = wordsArray.getJSONObject(i)
-            val word = OcrWord(
-                text = wordObj.getString("text"),
-                confidence = wordObj.getDouble("confidence").toFloat(),
-                x = wordObj.getInt("x"),
-                y = wordObj.getInt("y"),
-                width = wordObj.getInt("width"),
-                height = wordObj.getInt("height")
-            )
-            words.add(word)
-            fullText.append(word.text).append(" ")
+        for (textBlock in result.textBlocks) {
+            // 获取文本框的坐标
+            val boxPoints = textBlock.boxPoint
+            if (boxPoints.isNotEmpty()) {
+                // 计算边界框
+                var minX = Int.MAX_VALUE
+                var minY = Int.MAX_VALUE
+                var maxX = Int.MIN_VALUE
+                var maxY = Int.MIN_VALUE
+                
+                for (point in boxPoints) {
+                    minX = minOf(minX, point.x)
+                    minY = minOf(minY, point.y)
+                    maxX = maxOf(maxX, point.x)
+                    maxY = maxOf(maxY, point.y)
+                }
+                
+                val word = OcrWord(
+                    text = textBlock.text,
+                    confidence = textBlock.boxScore,
+                    x = minX,
+                    y = minY,
+                    width = maxX - minX,
+                    height = maxY - minY
+                )
+                words.add(word)
+                fullText.append(textBlock.text).append(" ")
+            }
         }
 
+        Log.d(TAG, "OCR 识别完成: ${words.size} 个文本块")
         return OcrResult(
             success = true,
             words = words,
