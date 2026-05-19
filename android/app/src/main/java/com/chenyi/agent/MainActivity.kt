@@ -13,7 +13,9 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * 主 Activity
@@ -94,7 +96,7 @@ fun MainScreen(
                                 scope.launch {
                                     try {
                                         // 在后台线程执行 JNI 调用
-                                        val result = withContext(kotlinx.coroutines.Dispatchers.IO) {
+                                        val result = withContext(Dispatchers.IO) {
                                             kernel.chat(message)
                                         }
                                         isLoading = false
