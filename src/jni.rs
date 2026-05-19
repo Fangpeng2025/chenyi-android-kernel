@@ -5,12 +5,23 @@ use jni::objects::{JClass, JString};
 use jni::sys::{jboolean, jstring};
 use parking_lot::Mutex;
 use std::sync::OnceLock;
+use tokio::runtime::Runtime;
 
 use crate::agent::AgentKernel;
 use crate::types::KernelConfig;
 
 /// 全局内核实例
 static KERNEL: OnceLock<Mutex<Option<AgentKernel>>> = OnceLock::new();
+
+/// 全局 Tokio Runtime
+static RUNTIME: OnceLock<Runtime> = OnceLock::new();
+
+/// 获取或初始化 Runtime
+fn get_runtime() -> &'static Runtime {
+    RUNTIME.get_or_init(|| {
+        Runtime::new().expect("Failed to create tokio runtime")
+    })
+}
 
 /// 初始化内核
 #[no_mangle]
@@ -75,8 +86,8 @@ pub extern "system" fn Java_com_chenyi_agent_Kernel_nativeChat(
         None => return error_response(&mut env, "内核未初始化"),
     };
 
-    // 使用 tokio runtime 执行异步
-    let rt = tokio::runtime::Runtime::new().unwrap();
+    // 使用全局 tokio runtime 执行异步
+    let rt = get_runtime();
     let result = rt.block_on(kernel.chat(&message));
 
     match result {

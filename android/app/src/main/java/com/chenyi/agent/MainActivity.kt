@@ -93,7 +93,10 @@ fun MainScreen(
 
                                 scope.launch {
                                     try {
-                                        val result = kernel.chat(message)
+                                        // 在后台线程执行 JNI 调用
+                                        val result = withContext(kotlinx.coroutines.Dispatchers.IO) {
+                                            kernel.chat(message)
+                                        }
                                         isLoading = false
                                         if (result.success) {
                                             val response = result.data?.get("response") as? String ?: "无响应"
