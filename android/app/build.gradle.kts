@@ -104,8 +104,8 @@ dependencies {
     // JSON
     implementation("org.json:json:20240303")
     
-    // RapidOCR (使用 GitHub 包)
-    implementation("com.github.RapidAI:RapidOcrAndroidCompose:2.0.0")
+    // Google ML Kit OCR (文本识别)
+    implementation("com.google.mlkit:text-recognition-chinese:16.0.1")
 
     // Testing
     testImplementation("junit:junit:4.13.2")

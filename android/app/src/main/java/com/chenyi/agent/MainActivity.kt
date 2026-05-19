@@ -62,10 +62,28 @@ class MainActivity : ComponentActivity() {
                     screenshotManager = screenshotManager,
                     onRequestScreenshotPermission = {
                         screenshotManager.requestPermission(this)
+                    },
+                    onCheckAccessibility = {
+                        checkAccessibilityService()
                     }
                 )
             }
         }
+    }
+    
+    /**
+     * 检查无障碍服务是否开启
+     */
+    private fun checkAccessibilityService(): Boolean {
+        val service = ChenyiAccessibilityService.getInstance()
+        if (service == null) {
+            // 引导用户开启无障碍服务
+            Toast.makeText(this, "请先开启无障碍服务", Toast.LENGTH_LONG).show()
+            val intent = android.content.Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS)
+            startActivity(intent)
+            return false
+        }
+        return true
     }
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: android.content.Intent?) {
@@ -95,7 +113,8 @@ fun MainScreen(
     kernel: Kernel,
     prefs: SharedPreferences,
     screenshotManager: ScreenshotManager,
-    onRequestScreenshotPermission: () -> Unit
+    onRequestScreenshotPermission: () -> Unit,
+    onCheckAccessibility: () -> Boolean
 ) {
     var inputText by remember { mutableStateOf("") }
     var messages by remember { mutableStateOf(listOf<Message>()) }
