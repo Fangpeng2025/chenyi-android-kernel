@@ -65,7 +65,7 @@ class OcrEngine(private val context: Context) {
 
         return try {
             val stream = ByteArrayOutputStream()
-            bitmap.compress(Bitmap.CompressFormat.RGB_565, 100, stream)
+            bitmap.compress(Bitmap.CompressFormat.PNG, 100, stream)
             val imageData = stream.toByteArray()
 
             val json = nativeOcr(imageData, bitmap.width, bitmap.height)

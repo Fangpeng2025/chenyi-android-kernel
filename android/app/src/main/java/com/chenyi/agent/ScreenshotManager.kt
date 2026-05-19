@@ -36,8 +36,8 @@ class ScreenshotManager(private val context: Context) {
     private var virtualDisplay: VirtualDisplay? = null
     private var imageReader: ImageReader? = null
     private var windowManager: WindowManager? = null
-    private var screenWidth = 0
-    private var screenHeight = 0
+    var screenWidth = 0
+    var screenHeight = 0
     private var screenDensity = 0
 
     /**
