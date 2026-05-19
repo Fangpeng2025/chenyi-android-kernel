@@ -1,8 +1,8 @@
 //! JNI 接口 - Android 平台支持
 
 use jni::JNIEnv;
-use jni::objects::{JClass, JString};
-use jni::sys::{jboolean, jstring};
+use jni::objects::{JClass, JString, JObject};
+use jni::sys::{jboolean, jstring, jobject};
 use parking_lot::Mutex;
 use std::sync::OnceLock;
 use tokio::runtime::Runtime;
@@ -16,8 +16,8 @@ static KERNEL: OnceLock<Mutex<Option<AgentKernel>>> = OnceLock::new();
 /// 全局 Tokio Runtime
 static RUNTIME: OnceLock<Runtime> = OnceLock::new();
 
-/// JNI 工具回调（存储 Kotlin 端传递的回调函数指针）
-static JNI_TOOL_CALLBACK: OnceLock<Mutex<Option<usize>>> = OnceLock::new();
+/// JNI 环境（用于回调）
+static JNI_ENV: OnceLock<Mutex<Option<usize>>> = OnceLock::new();
 
 /// 获取或初始化 Runtime
 fn get_runtime() -> &'static Runtime {
@@ -63,18 +63,6 @@ pub extern "system" fn Java_com_chenyi_agent_Kernel_nativeInit(
     }
 }
 
-/// 注册工具回调
-#[no_mangle]
-pub extern "system" fn Java_com_chenyi_agent_Kernel_nativeRegisterToolCallback(
-    _env: JNIEnv,
-    _class: JClass,
-    callback_ptr: usize,
-) {
-    eprintln!("[JNI] 注册工具回调: {}", callback_ptr);
-    let cell = JNI_TOOL_CALLBACK.get_or_init(|| Mutex::new(None));
-    *cell.lock() = Some(callback_ptr);
-}
-
 /// 发送消息
 #[no_mangle]
 pub extern "system" fn Java_com_chenyi_agent_Kernel_nativeChat(
@@ -115,7 +103,7 @@ pub extern "system" fn Java_com_chenyi_agent_Kernel_nativeChat(
     }
 }
 
-/// 执行工具
+/// 执行工具（直接调用，用于测试）
 #[no_mangle]
 pub extern "system" fn Java_com_chenyi_agent_Kernel_nativeExecuteTool(
     mut env: JNIEnv,

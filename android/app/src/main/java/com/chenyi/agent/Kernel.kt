@@ -1,6 +1,7 @@
 package com.chenyi.agent
 
 import android.content.Context
+import android.util.Log
 
 /**
  * Rust 内核 JNI 桥接
@@ -8,6 +9,8 @@ import android.content.Context
 class Kernel(private val context: Context) {
 
     companion object {
+        private const val TAG = "Kernel"
+        
         init {
             System.loadLibrary("chenyi")
         }
@@ -28,34 +31,31 @@ class Kernel(private val context: Context) {
         val dataDir = context.filesDir.absolutePath
         val success = nativeInit(dataDir)
         
-        if (success) {
-            // 注册工具回调
-            registerToolCallback()
-        }
-        
+        Log.d(TAG, "内核初始化: $success")
         return success
-    }
-    
-    /**
-     * 注册工具回调（将 Kotlin 工具函数注册到 Rust）
-     */
-    private fun registerToolCallback() {
-        // 工具回调通过 ChenyiAccessibilityService 执行
-        // 这里传递一个标记，Rust 端会通过 JNI 回调回来
-        val callbackPtr = 0L // 占位符，实际通过 AccessibilityService 执行
-        nativeRegisterToolCallback(callbackPtr)
     }
 
     /**
      * 发送消息
      */
     fun chat(message: String): Result {
-        val json = nativeChat(message)
-        return Result.fromJson(json)
+        return try {
+            // 先检查无障碍服务
+            val service = ChenyiAccessibilityService.getInstance()
+            if (service == null) {
+                Log.w(TAG, "无障碍服务未连接，仅使用 LLM")
+            }
+            
+            val json = nativeChat(message)
+            Result.fromJson(json)
+        } catch (e: Exception) {
+            Log.e(TAG, "聊天失败", e)
+            Result.error(e.message ?: "聊天失败")
+        }
     }
 
     /**
-     * 执行工具
+     * 执行工具（通过 AccessibilityService）
      */
     fun executeTool(tool: String, params: Map<String, Any> = emptyMap()): Result {
         val paramsJson = if (params.isEmpty()) "{}" else {
@@ -65,20 +65,25 @@ class Kernel(private val context: Context) {
             }
             obj.toString()
         }
-        val json = nativeExecuteTool(tool, paramsJson)
-        return Result.fromJson(json)
+        
+        return executeToolJson(tool, paramsJson)
     }
     
     /**
-     * 执行工具（通过 AccessibilityService）
+     * 执行工具（JSON 参数）
      */
-    fun executeToolViaService(tool: String, paramsJson: String): Result {
-        val service = ChenyiAccessibilityService.getInstance()
-        if (service != null) {
-            val json = service.executeTool(tool, paramsJson)
-            return Result.fromJson(json)
-        } else {
-            return Result.error("无障碍服务未连接")
+    fun executeToolJson(tool: String, paramsJson: String): Result {
+        return try {
+            val service = ChenyiAccessibilityService.getInstance()
+            if (service != null) {
+                val json = service.executeTool(tool, paramsJson)
+                Result.fromJson(json)
+            } else {
+                Result.error("无障碍服务未连接")
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "执行工具失败: $tool", e)
+            Result.error(e.message ?: "执行失败")
         }
     }
 
@@ -95,6 +100,7 @@ class Kernel(private val context: Context) {
      */
     fun destroy() {
         nativeDestroy()
+        Log.d(TAG, "内核已销毁")
     }
 }
 

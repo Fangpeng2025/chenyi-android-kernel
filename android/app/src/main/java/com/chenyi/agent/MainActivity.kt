@@ -3,8 +3,10 @@ package com.chenyi.agent
 import android.content.Context
 import android.content.SharedPreferences
 import android.os.Bundle
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -21,7 +23,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -36,6 +37,7 @@ class MainActivity : ComponentActivity() {
 
     private lateinit var kernel: Kernel
     private lateinit var prefs: SharedPreferences
+    private lateinit var screenshotManager: ScreenshotManager
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -46,14 +48,31 @@ class MainActivity : ComponentActivity() {
         kernel = Kernel(this)
         val initialized = kernel.init()
 
+        // 初始化截图管理器
+        screenshotManager = ScreenshotManager(this)
+        screenshotManager.init()
+
         setContent {
             ChenYiTheme {
                 MainScreen(
                     kernelInitialized = initialized,
                     kernel = kernel,
-                    prefs = prefs
+                    prefs = prefs,
+                    screenshotManager = screenshotManager,
+                    onRequestScreenshotPermission = {
+                        screenshotManager.requestPermission(this)
+                    }
                 )
             }
+        }
+    }
+
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: android.content.Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        
+        if (requestCode == ScreenshotManager.REQUEST_MEDIA_PROJECTION && data != null) {
+            val success = screenshotManager.handlePermissionResult(resultCode, data)
+            Toast.makeText(this, if (success) "截图权限已授权" else "截图权限被拒绝", Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -61,6 +80,9 @@ class MainActivity : ComponentActivity() {
         super.onDestroy()
         if (::kernel.isInitialized) {
             kernel.destroy()
+        }
+        if (::screenshotManager.isInitialized) {
+            screenshotManager.destroy()
         }
     }
 }
@@ -70,7 +92,9 @@ class MainActivity : ComponentActivity() {
 fun MainScreen(
     kernelInitialized: Boolean,
     kernel: Kernel,
-    prefs: SharedPreferences
+    prefs: SharedPreferences,
+    screenshotManager: ScreenshotManager,
+    onRequestScreenshotPermission: () -> Unit
 ) {
     var inputText by remember { mutableStateOf("") }
     var messages by remember { mutableStateOf(listOf<Message>()) }
@@ -80,6 +104,7 @@ fun MainScreen(
     var status by remember { mutableStateOf("内核已就绪") }
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
+    val context = LocalContext.current
 
     // 加载设置
     var apiEndpoint by remember { mutableStateOf(prefs.getString("api_endpoint", "https://oneapi.xintiandi.online/v1") ?: "") }
@@ -327,11 +352,23 @@ fun MainScreen(
             title = { Text("工具列表", fontWeight = FontWeight.Bold) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    ToolItem("截图", "截取当前屏幕") { /* TODO */ }
-                    ToolItem("点击", "点击屏幕坐标") { /* TODO */ }
-                    ToolItem("滑动", "滑动屏幕") { /* TODO */ }
-                    ToolItem("OCR", "识别屏幕文字") { /* TODO */ }
-                    ToolItem("打开应用", "打开指定应用") { /* TODO */ }
+                    ToolItem("截图", "截取当前屏幕") {
+                        if (screenshotManager.isAuthorized()) {
+                            val path = screenshotManager.captureAndSave()
+                            if (path != null) {
+                                status = "截图已保存: $path"
+                            } else {
+                                status = "截图失败"
+                            }
+                        } else {
+                            onRequestScreenshotPermission()
+                        }
+                        showTools = false
+                    }
+                    ToolItem("点击", "点击屏幕坐标") { /* TODO */ showTools = false }
+                    ToolItem("滑动", "滑动屏幕") { /* TODO */ showTools = false }
+                    ToolItem("OCR", "识别屏幕文字") { /* TODO */ showTools = false }
+                    ToolItem("打开应用", "打开指定应用") { /* TODO */ showTools = false }
                 }
             },
             confirmButton = {

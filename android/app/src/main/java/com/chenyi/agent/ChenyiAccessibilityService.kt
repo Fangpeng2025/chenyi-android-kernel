@@ -3,31 +3,45 @@ package com.chenyi.agent
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.GestureDescription
 import android.content.Intent
+import android.graphics.Bitmap
 import android.graphics.Path
 import android.graphics.Rect
 import android.os.Bundle
+import android.util.Log
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
-import org.json.JSONArray
 import org.json.JSONObject
 
 /**
  * 晨翼无障碍服务
  * 
- * 提供屏幕操作能力：点击、滑动、输入、截图等
+ * 提供屏幕操作能力：点击、滑动、输入、截图、OCR 等
  */
 class ChenyiAccessibilityService : AccessibilityService() {
 
     companion object {
+        private const val TAG = "ChenyiService"
         private var instance: ChenyiAccessibilityService? = null
 
         fun getInstance(): ChenyiAccessibilityService? = instance
     }
 
+    private var ocrEngine: OcrEngine? = null
+    private var screenshotManager: ScreenshotManager? = null
+
     override fun onServiceConnected() {
         super.onServiceConnected()
         instance = this
-        android.util.Log.d("ChenyiService", "无障碍服务已连接")
+        
+        // 初始化 OCR
+        ocrEngine = OcrEngine(applicationContext)
+        ocrEngine?.init()
+        
+        // 初始化截图管理器
+        screenshotManager = ScreenshotManager(applicationContext)
+        screenshotManager?.init()
+        
+        Log.d(TAG, "无障碍服务已连接")
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
@@ -35,12 +49,14 @@ class ChenyiAccessibilityService : AccessibilityService() {
     }
 
     override fun onInterrupt() {
-        android.util.Log.d("ChenyiService", "无障碍服务中断")
+        Log.d(TAG, "无障碍服务中断")
     }
 
     override fun onDestroy() {
         super.onDestroy()
+        screenshotManager?.destroy()
         instance = null
+        Log.d(TAG, "无障碍服务已销毁")
     }
 
     // ============ 工具方法 ============
@@ -62,6 +78,8 @@ class ChenyiAccessibilityService : AccessibilityService() {
             "close_app" -> closeApp()
             "current_app" -> currentApp()
             "list_apps" -> listApps()
+            "ocr" -> ocr(params)
+            "find_text" -> findText(params)
             else -> error("未知工具: $tool")
         }
 
@@ -72,15 +90,44 @@ class ChenyiAccessibilityService : AccessibilityService() {
 
     private fun screenshot(params: JSONObject): Result {
         return try {
-            // Android 11+ 使用 takeScreenshot API
-            // 这里返回提示信息
-            Result.ok(mapOf(
-                "message" to "截图功能需要 MediaProjection API",
-                "hint" to "请在 MainActivity 中实现截图"
-            ))
+            val region = params.optJSONObject("region")
+            
+            val bitmap = if (region != null) {
+                val x = region.getInt("x")
+                val y = region.getInt("y")
+                val width = region.getInt("width")
+                val height = region.getInt("height")
+                screenshotManager?.captureRegion(x, y, width, height)
+            } else {
+                screenshotManager?.capture()
+            }
+
+            if (bitmap != null) {
+                // 保存到文件
+                val path = saveBitmap(bitmap)
+                bitmap.recycle()
+                
+                Result.ok(mapOf(
+                    "success" to true,
+                    "path" to path,
+                    "width" to (if (region != null) region.getInt("width") else screenshotManager?.screenWidth ?: 0),
+                    "height" to (if (region != null) region.getInt("height") else screenshotManager?.screenHeight ?: 0)
+                ))
+            } else {
+                Result.error("截图失败")
+            }
         } catch (e: Exception) {
+            Log.e(TAG, "截图失败", e)
             Result.error(e.message ?: "截图失败")
         }
+    }
+
+    private fun saveBitmap(bitmap: Bitmap): String {
+        val file = java.io.File(cacheDir, "screenshot_${System.currentTimeMillis()}.png")
+        java.io.FileOutputStream(file).use { out ->
+            bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
+        }
+        return file.absolutePath
     }
 
     // ============ 点击 ============
@@ -98,8 +145,10 @@ class ChenyiAccessibilityService : AccessibilityService() {
                 .build()
 
             val success = dispatchGesture(gesture, null, null)
+            Log.d(TAG, "点击: ($x, $y) -> $success")
             Result.ok(mapOf("x" to x, "y" to y, "success" to success))
         } catch (e: Exception) {
+            Log.e(TAG, "点击失败", e)
             Result.error(e.message ?: "点击失败")
         }
     }
@@ -107,8 +156,8 @@ class ChenyiAccessibilityService : AccessibilityService() {
     // ============ 长按 ============
 
     private fun longPress(params: JSONObject): Result {
-        val x = params.getInt("start_x")
-        val y = params.getInt("start_y")
+        val x = params.getInt("x")
+        val y = params.getInt("y")
         val duration = params.optLong("duration", 500)
 
         return try {
@@ -120,8 +169,10 @@ class ChenyiAccessibilityService : AccessibilityService() {
                 .build()
 
             val success = dispatchGesture(gesture, null, null)
+            Log.d(TAG, "长按: ($x, $y) ${duration}ms -> $success")
             Result.ok(mapOf("x" to x, "y" to y, "duration" to duration, "success" to success))
         } catch (e: Exception) {
+            Log.e(TAG, "长按失败", e)
             Result.error(e.message ?: "长按失败")
         }
     }
@@ -145,6 +196,7 @@ class ChenyiAccessibilityService : AccessibilityService() {
                 .build()
 
             val success = dispatchGesture(gesture, null, null)
+            Log.d(TAG, "滑动: ($startX, $startY) -> ($endX, $endY) ${duration}ms -> $success")
             Result.ok(mapOf(
                 "start" to listOf(startX, startY),
                 "end" to listOf(endX, endY),
@@ -152,6 +204,7 @@ class ChenyiAccessibilityService : AccessibilityService() {
                 "success" to success
             ))
         } catch (e: Exception) {
+            Log.e(TAG, "滑动失败", e)
             Result.error(e.message ?: "滑动失败")
         }
     }
@@ -174,11 +227,13 @@ class ChenyiAccessibilityService : AccessibilityService() {
                     arguments
                 )
                 focusedNode.recycle()
+                Log.d(TAG, "输入文本: $text -> $success")
                 Result.ok(mapOf("text" to text, "success" to success))
             } else {
                 Result.error("未找到输入框")
             }
         } catch (e: Exception) {
+            Log.e(TAG, "输入失败", e)
             Result.error(e.message ?: "输入失败")
         }
     }
@@ -190,8 +245,10 @@ class ChenyiAccessibilityService : AccessibilityService() {
 
         return try {
             val success = performGlobalAction(keycode)
+            Log.d(TAG, "按键: $keycode -> $success")
             Result.ok(mapOf("keycode" to keycode, "success" to success))
         } catch (e: Exception) {
+            Log.e(TAG, "按键失败", e)
             Result.error(e.message ?: "按键失败")
         }
     }
@@ -206,11 +263,13 @@ class ChenyiAccessibilityService : AccessibilityService() {
             if (intent != null) {
                 intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 startActivity(intent)
+                Log.d(TAG, "打开应用: $packageName")
                 Result.ok(mapOf("package" to packageName))
             } else {
                 Result.error("应用不存在: $packageName")
             }
         } catch (e: Exception) {
+            Log.e(TAG, "打开应用失败", e)
             Result.error(e.message ?: "打开应用失败")
         }
     }
@@ -219,10 +278,11 @@ class ChenyiAccessibilityService : AccessibilityService() {
 
     private fun closeApp(): Result {
         return try {
-            // 返回桌面
             val success = performGlobalAction(GLOBAL_ACTION_HOME)
+            Log.d(TAG, "返回桌面 -> $success")
             Result.ok(mapOf("action" to "home", "success" to success))
         } catch (e: Exception) {
+            Log.e(TAG, "关闭应用失败", e)
             Result.error(e.message ?: "关闭应用失败")
         }
     }
@@ -235,11 +295,13 @@ class ChenyiAccessibilityService : AccessibilityService() {
             if (rootNode != null) {
                 val packageName = rootNode.packageName?.toString() ?: "unknown"
                 rootNode.recycle()
+                Log.d(TAG, "当前应用: $packageName")
                 Result.ok(mapOf("package" to packageName))
             } else {
                 Result.error("无法获取当前应用")
             }
         } catch (e: Exception) {
+            Log.e(TAG, "获取当前应用失败", e)
             Result.error(e.message ?: "获取当前应用失败")
         }
     }
@@ -255,9 +317,93 @@ class ChenyiAccessibilityService : AccessibilityService() {
                     "name" to app.loadLabel(packageManager).toString()
                 )
             }
+            Log.d(TAG, "列出应用: ${list.size} 个")
             Result.ok(mapOf("apps" to list, "count" to list.size))
         } catch (e: Exception) {
+            Log.e(TAG, "列出应用失败", e)
             Result.error(e.message ?: "列出应用失败")
+        }
+    }
+
+    // ============ OCR ============
+
+    private fun ocr(params: JSONObject): Result {
+        return try {
+            // 先截图
+            val bitmap = screenshotManager?.capture()
+            if (bitmap == null) {
+                return Result.error("截图失败")
+            }
+
+            // OCR 识别
+            val result = ocrEngine?.recognize(bitmap)
+            bitmap.recycle()
+
+            if (result != null && result.success) {
+                val words = result.words.map { word ->
+                    mapOf(
+                        "text" to word.text,
+                        "confidence" to word.confidence,
+                        "x" to word.x,
+                        "y" to word.y,
+                        "width" to word.width,
+                        "height" to word.height
+                    )
+                }
+                Log.d(TAG, "OCR 识别: ${result.fullText}")
+                Result.ok(mapOf(
+                    "words" to words,
+                    "full_text" to result.fullText
+                ))
+            } else {
+                Result.error(result?.error ?: "OCR 识别失败")
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "OCR 失败", e)
+            Result.error(e.message ?: "OCR 失败")
+        }
+    }
+
+    // ============ 查找文本 ============
+
+    private fun findText(params: JSONObject): Result {
+        val searchText = params.getString("text")
+
+        return try {
+            // 先 OCR
+            val ocrResult = ocr(JSONObject())
+            if (!ocrResult.success) {
+                return ocrResult
+            }
+
+            // 查找文本
+            val words = ocrResult.data?.get("words") as? List<Map<String, Any>> ?: emptyList()
+            for (word in words) {
+                val text = word["text"] as? String ?: ""
+                if (text.contains(searchText, ignoreCase = true)) {
+                    val x = (word["x"] as? Number)?.toInt() ?: 0
+                    val y = (word["y"] as? Number)?.toInt() ?: 0
+                    val width = (word["width"] as? Number)?.toInt() ?: 0
+                    val height = (word["height"] as? Number)?.toInt() ?: 0
+                    
+                    Log.d(TAG, "找到文本: $text at ($x, $y)")
+                    return Result.ok(mapOf(
+                        "found" to true,
+                        "text" to text,
+                        "x" to x,
+                        "y" to y,
+                        "width" to width,
+                        "height" to height,
+                        "center_x" to x + width / 2,
+                        "center_y" to y + height / 2
+                    ))
+                }
+            }
+
+            Result.ok(mapOf("found" to false, "text" to searchText))
+        } catch (e: Exception) {
+            Log.e(TAG, "查找文本失败", e)
+            Result.error(e.message ?: "查找文本失败")
         }
     }
 
