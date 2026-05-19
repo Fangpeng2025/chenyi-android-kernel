@@ -364,13 +364,23 @@ fun MainScreen(
             },
             confirmButton = {
                 TextButton(onClick = {
+                    // 保存到 SharedPreferences
                     prefs.edit()
                         .putString("api_endpoint", apiEndpoint)
                         .putString("api_key", apiKey)
                         .putString("model_name", modelName)
                         .apply()
+                    
+                    // 更新内核配置
+                    val config = KernelConfig(
+                        apiEndpoint = apiEndpoint,
+                        apiKey = apiKey,
+                        modelName = modelName
+                    )
+                    kernel.updateConfig(config)
+                    
                     showSettings = false
-                    status = "设置已保存"
+                    status = "设置已保存并生效"
                 }) {
                     Text("保存")
                 }
