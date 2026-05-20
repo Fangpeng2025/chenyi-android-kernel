@@ -116,6 +116,8 @@ class ScreenshotManager(private val context: Context) {
         }
 
         return try {
+            Log.d(TAG, "开始截图: ${screenWidth}x${screenHeight}")
+            
             // 创建 ImageReader
             imageReader = ImageReader.newInstance(
                 screenWidth,
@@ -123,6 +125,7 @@ class ScreenshotManager(private val context: Context) {
                 PixelFormat.RGBA_8888,
                 2
             )
+            Log.d(TAG, "ImageReader 创建成功")
 
             // 创建 VirtualDisplay
             virtualDisplay = mediaProjection?.createVirtualDisplay(
@@ -135,14 +138,21 @@ class ScreenshotManager(private val context: Context) {
                 null,
                 null
             )
+            Log.d(TAG, "VirtualDisplay 创建成功")
 
-            // 等待一帧
-            Thread.sleep(100)
+            // 等待一帧（最多等待 1 秒）
+            var image: Image? = null
+            for (i in 0..10) {
+                Thread.sleep(100)
+                image = imageReader?.acquireLatestImage()
+                if (image != null) {
+                    Log.d(TAG, "获取图像成功 (尝试 $i 次)")
+                    break
+                }
+            }
 
-            // 获取最新帧
-            val image: Image? = imageReader?.acquireLatestImage()
             if (image == null) {
-                Log.e(TAG, "获取图像失败")
+                Log.e(TAG, "获取图像失败：等待超时")
                 return null
             }
 
@@ -168,7 +178,7 @@ class ScreenshotManager(private val context: Context) {
             Log.d(TAG, "截图成功: ${screenWidth}x${screenHeight}")
             finalBitmap
         } catch (e: Exception) {
-            Log.e(TAG, "截图失败: ${e.message}")
+            Log.e(TAG, "截图失败: ${e.message}", e)
             null
         } finally {
             release()
