@@ -186,16 +186,14 @@ class OcrEngine(private val context: Context) {
             conn.readTimeout = 60000
             
             val input = conn.getInputStream()
-            val output = FileOutputStream(destFile)
-            
-            val buffer = ByteArray(8192)
-            var bytesRead: Int
-            
-            while (input.read(buffer).also { bytesRead = it } != -1) {
-                output.write(buffer, 0, bytesRead)
+            java.io.FileOutputStream(destFile).use { output ->
+                val buffer = ByteArray(8192)
+                var bytesRead: Int
+                
+                while (input.read(buffer).also { bytesRead = it } != -1) {
+                    output.write(buffer, 0, bytesRead)
+                }
             }
-            
-            output.close()
             input.close()
             
             true
