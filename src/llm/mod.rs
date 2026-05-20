@@ -198,7 +198,7 @@ impl LlmClient {
             temperature: self.config.temperature,
         };
         
-        let url = format!("{}/v1/chat/completions", self.config.endpoint);
+        let url = format!("{}/chat/completions", self.config.endpoint);
         
         log::info!("[LLM] 请求 URL: {}", url);
         log::info!("[LLM] API Key (前10字符): {}...", self.config.api_key.chars().take(10).collect::<String>());
