@@ -315,7 +315,14 @@ private fun swipe(params: JSONObject): Result {
                     "recent" -> GLOBAL_ACTION_RECENTS
                     "notifications" -> GLOBAL_ACTION_NOTIFICATIONS
                     "quick_settings" -> GLOBAL_ACTION_QUICK_SETTINGS
-                    "power_dialog" -> GLOBAL_ACTION_POWER_DIALOGS
+                    "power_dialog" -> {
+                        // GLOBAL_ACTION_POWER_DIALOGS 需要 API 28+
+                        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
+                            GLOBAL_ACTION_POWER_DIALOGS
+                        } else {
+                            return Result.error("电源菜单需要 Android 9.0+")
+                        }
+                    }
                     "lock_screen" -> GLOBAL_ACTION_LOCK_SCREEN
                     "take_screenshot" -> GLOBAL_ACTION_TAKE_SCREENSHOT
                     else -> return Result.error("未知按键: ${params.getString("key")}")
