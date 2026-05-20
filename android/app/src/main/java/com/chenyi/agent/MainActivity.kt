@@ -808,17 +808,5 @@ fun ToolItem(name: String, description: String, onClick: () -> Unit) {
 // 使用 Session.kt 中定义的完整 Message 类
 // Message 类已在 Session.kt 中定义，包含 id, role, content, timestamp, toolCalls 字段
 
-@Composable
-fun ChenYiTheme(content: @Composable () -> Unit) {
-    MaterialTheme(
-        colorScheme = lightColorScheme(
-            primary = Color(0xFF2196F3),
-            primaryContainer = Color(0xFFBBDEFB),
-            secondary = Color(0xFF03DAC6),
-            error = Color(0xFFF44336)
-        ),
-        typography = ChenYiTypography,
-        shapes = ChenYiShapes,
-        content = content
-    )
-}
+// ChenYiTheme 已在 Theme.kt 中定义，使用 Material Design 3 完整主题
+// 包含动态颜色、深色模式支持等高级功能
