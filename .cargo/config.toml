@@ -1,11 +1,3 @@
-[target.aarch64-linux-android]
-linker = "aarch64-linux-android29-clang"
-
-[target.armv7-linux-androideabi]
-linker = "armv7a-linux-androideabi29-clang"
-
-[target.x86_64-linux-android]
-linker = "x86_64-linux-android29-clang"
-
-[target.i686-linux-android]
-linker = "i686-linux-android29-clang"
+# Android 目标配置
+# GitHub Actions 通过环境变量 CC_xxx 指定编译器
+# 这里不需要配置 linker，让 cargo 自动使用环境变量
