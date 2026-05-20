@@ -9,6 +9,3 @@ linker = "x86_64-linux-android29-clang"
 
 [target.i686-linux-android]
 linker = "i686-linux-android29-clang"
-
-[build]
-rustflags = ["-C", "link-arg=-fuse-ld=lld"]
