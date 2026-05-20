@@ -396,10 +396,20 @@ pub extern "system" fn Java_com_chenyi_agent_Kernel_nativeUpdateConfig(
                             new_config.model = model.to_string();
                         }
                         if let Some(max_tokens) = config.get("max_tokens").and_then(|v| v.as_i64()) {
-                            new_config.max_tokens = max_tokens as u32;
+                            // 验证范围
+                            if max_tokens > 0 && max_tokens <= 100000 {
+                                new_config.max_tokens = max_tokens as u32;
+                            } else {
+                                log::warn!("[JNI] max_tokens 超出范围: {}, 使用默认值", max_tokens);
+                            }
                         }
                         if let Some(temperature) = config.get("temperature").and_then(|v| v.as_f64()) {
-                            new_config.temperature = temperature as f32;
+                            // 验证范围
+                            if temperature >= 0.0 && temperature <= 2.0 {
+                                new_config.temperature = temperature as f32;
+                            } else {
+                                log::warn!("[JNI] temperature 超出范围: {}, 使用默认值", temperature);
+                            }
                         }
                         
                         log::info!("[JNI] 新配置 - endpoint: {}, model: {}", new_config.endpoint, new_config.model);
