@@ -174,7 +174,7 @@ class TaskManager(private val context: Context) {
         return try {
             val json = JSONObject(resultStr)
             if (json.optBoolean("success", false)) {
-                Result.success(json.optString("data", ""))
+                Result.ok(mapOf("data" to json.optString("data", "")))
             } else {
                 Result.error(json.optString("error", "执行失败"))
             }

@@ -317,8 +317,9 @@ private fun swipe(params: JSONObject): Result {
                     "quick_settings" -> GLOBAL_ACTION_QUICK_SETTINGS
                     "power_dialog" -> {
                         // GLOBAL_ACTION_POWER_DIALOGS 需要 API 28+
+                        // 使用常量值避免编译错误
                         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
-                            GLOBAL_ACTION_POWER_DIALOGS
+                            6 // GLOBAL_ACTION_POWER_DIALOGS 的值
                         } else {
                             return Result.error("电源菜单需要 Android 9.0+")
                         }
