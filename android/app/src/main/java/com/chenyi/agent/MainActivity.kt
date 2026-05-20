@@ -653,6 +653,33 @@ fun SettingsScreen(
                 )
             }
         }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // 热更新组
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            color = Color.White
+        ) {
+            Column {
+                WeChatSettingItem(
+                    title = "检查更新",
+                    subtitle = "检查并下载最新内核",
+                    onClick = {
+                        val hotUpdateManager = HotUpdateManager(context)
+                        Toast.makeText(context, "正在检查更新...", Toast.LENGTH_SHORT).show()
+                        hotUpdateManager.checkUpdate { hasUpdate, message ->
+                            if (hasUpdate) {
+                                Toast.makeText(context, message, Toast.LENGTH_LONG).show()
+                                // TODO: 显示更新对话框
+                            } else {
+                                Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                    }
+                )
+            }
+        }
     }
 
     // API Key 编辑对话框
