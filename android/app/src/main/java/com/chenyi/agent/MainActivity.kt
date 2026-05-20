@@ -197,16 +197,18 @@ fun ChatScreen(
     var inputText by remember { mutableStateOf("") }
     var isLoading by remember { mutableStateOf(false) }
     val listState = rememberLazyListState()
-    var showApiKeyDialog by remember { mutableStateOf(false) }
+    
+    // API Key 未设置提示 - 只在首次进入聊天页面时显示
+    var hasShownApiKeyWarning by remember { mutableStateOf(false) }
 
     // API Key 未设置提示
-    if (apiKey.isBlank()) {
+    if (apiKey.isBlank() && !hasShownApiKeyWarning) {
         AlertDialog(
-            onDismissRequest = { showApiKeyDialog = false },
+            onDismissRequest = { hasShownApiKeyWarning = true },
             title = { Text("请配置 API Key") },
-            text = { Text("使用前需要先配置 API Key，请前往设置页面") },
+            text = { Text("使用前需要先配置 API Key，请前往设置页面配置") },
             confirmButton = {
-                TextButton(onClick = { showApiKeyDialog = false }) {
+                TextButton(onClick = { hasShownApiKeyWarning = true }) {
                     Text("知道了")
                 }
             }
