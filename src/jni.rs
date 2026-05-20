@@ -382,7 +382,29 @@ pub extern "system" fn Java_com_chenyi_agent_Kernel_nativeUpdateConfig(
                     // 重新初始化 LLM 客户端
                     if needs_reinit {
                         log::info!("[JNI] 重新初始化 LLM 客户端");
-                        match crate::llm::LlmClient::new(kernel.llm.config.clone()) {
+                        
+                        // 创建新的配置
+                        let mut new_config = kernel.llm.config.as_ref().clone();
+                        
+                        if let Some(endpoint) = config.get("endpoint").and_then(|v| v.as_str()) {
+                            new_config.endpoint = endpoint.to_string();
+                        }
+                        if let Some(api_key) = config.get("api_key").and_then(|v| v.as_str()) {
+                            new_config.api_key = api_key.to_string();
+                        }
+                        if let Some(model) = config.get("model").and_then(|v| v.as_str()) {
+                            new_config.model = model.to_string();
+                        }
+                        if let Some(max_tokens) = config.get("max_tokens").and_then(|v| v.as_i64()) {
+                            new_config.max_tokens = max_tokens as u32;
+                        }
+                        if let Some(temperature) = config.get("temperature").and_then(|v| v.as_f64()) {
+                            new_config.temperature = temperature as f32;
+                        }
+                        
+                        log::info!("[JNI] 新配置 - endpoint: {}, model: {}", new_config.endpoint, new_config.model);
+                        
+                        match crate::llm::LlmClient::new(new_config) {
                             Ok(new_client) => {
                                 kernel.llm = std::sync::Arc::new(new_client);
                                 log::info!("[JNI] LLM 客户端重新初始化成功");
