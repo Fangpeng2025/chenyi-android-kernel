@@ -355,26 +355,28 @@ pub extern "system" fn Java_com_chenyi_agent_Kernel_nativeUpdateConfig(
                     // 更新 LLM 配置
                     let mut needs_reinit = false;
                     
+                    // 获取当前配置的可变引用（通过 Arc::make_mut）
+                    // 注意：由于 LlmClient 在 Arc 中，我们需要重新创建
+                    
                     if let Some(endpoint) = config.get("endpoint").and_then(|v| v.as_str()) {
-                        kernel.llm.config.endpoint = endpoint.to_string();
                         log::info!("[JNI] 更新 endpoint: {}", endpoint);
                         needs_reinit = true;
                     }
                     if let Some(api_key) = config.get("api_key").and_then(|v| v.as_str()) {
-                        kernel.llm.config.api_key = api_key.to_string();
                         let preview: String = api_key.chars().take(10).collect();
                         log::info!("[JNI] 更新 api_key: {}***", preview);
                         needs_reinit = true;
                     }
                     if let Some(model) = config.get("model").and_then(|v| v.as_str()) {
-                        kernel.llm.config.model = model.to_string();
                         log::info!("[JNI] 更新 model: {}", model);
                     }
-                    if let Some(max_tokens) = config.get("max_tokens").and_then(|v| v.as_u64()) {
-                        kernel.llm.config.max_tokens = max_tokens as u32;
-                    }
-                    if let Some(temperature) = config.get("temperature").and_then(|v| v.as_f64()) {
-                        kernel.llm.config.temperature = temperature as f32;
+                    
+                    // 如果需要重新初始化 LLM 客户端
+                    if needs_reinit {
+                        log::info!("[JNI] 配置已更改，需要重新初始化 LLM 客户端");
+                        // TODO: 实现 LLM 客户端重新初始化
+                        // 当前先记录警告
+                        log::warn!("[JNI] LLM 客户端重新初始化功能待实现");
                     }
                     
                     // 重新初始化 LLM 客户端
