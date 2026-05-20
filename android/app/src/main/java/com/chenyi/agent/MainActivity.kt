@@ -685,6 +685,13 @@ fun SettingsScreen(
                     onClick = {
                         apiKey = tempApiKey
                         prefs.edit().putString("api_key", tempApiKey).apply()
+                        // 更新内核配置
+                        val config = KernelConfig(
+                            apiEndpoint = apiEndpoint,
+                            apiKey = tempApiKey,
+                            modelName = modelName
+                        )
+                        kernel.updateConfig(config)
                         Toast.makeText(context, "API Key 已保存", Toast.LENGTH_SHORT).show()
                         showApiKeyEditor = false
                     }
@@ -719,6 +726,13 @@ fun SettingsScreen(
                     onClick = {
                         apiEndpoint = tempEndpoint
                         prefs.edit().putString("api_endpoint", tempEndpoint).apply()
+                        // 更新内核配置
+                        val config = KernelConfig(
+                            apiEndpoint = tempEndpoint,
+                            apiKey = apiKey,
+                            modelName = modelName
+                        )
+                        kernel.updateConfig(config)
                         Toast.makeText(context, "Endpoint 已保存", Toast.LENGTH_SHORT).show()
                         showEndpointEditor = false
                     }
@@ -753,6 +767,13 @@ fun SettingsScreen(
                     onClick = {
                         modelName = tempModel
                         prefs.edit().putString("model_name", tempModel).apply()
+                        // 更新内核配置
+                        val config = KernelConfig(
+                            apiEndpoint = apiEndpoint,
+                            apiKey = apiKey,
+                            modelName = tempModel
+                        )
+                        kernel.updateConfig(config)
                         Toast.makeText(context, "模型名称已保存", Toast.LENGTH_SHORT).show()
                         showModelEditor = false
                     }
