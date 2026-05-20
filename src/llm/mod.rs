@@ -138,7 +138,6 @@ impl LlmClient {
         let client = reqwest::Client::builder()
             .timeout(Duration::from_secs(120))  // 增加超时时间
             .connect_timeout(Duration::from_secs(10))
-            .retry(3)  // 自动重试 3 次
             .build()
             .map_err(|e| Error::Other(format!("创建 HTTP 客户端失败: {}", e)))?;
         

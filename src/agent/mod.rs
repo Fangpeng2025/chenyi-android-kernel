@@ -308,7 +308,7 @@ impl AgentKernel {
         // 检查最后一条消息是否是 assistant 的 tool_calls
         // 如果不是，说明历史状态异常
         let last_is_tool_calls = history.last().map(|msg| {
-            matches!(msg.role.as_str(), "assistant" if !msg.tool_calls.is_empty())
+            matches!(msg.role.as_str(), "assistant" if msg.tool_calls.is_some() && !msg.tool_calls.as_ref().unwrap().is_empty())
         }).unwrap_or(false);
         
         if !last_is_tool_calls {
