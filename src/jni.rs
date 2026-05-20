@@ -384,7 +384,7 @@ pub extern "system" fn Java_com_chenyi_agent_Kernel_nativeUpdateConfig(
                         log::info!("[JNI] 重新初始化 LLM 客户端");
                         
                         // 创建新的配置
-                        let mut new_config = kernel.llm.config.as_ref().clone();
+                        let mut new_config = kernel.llm.config.clone();
                         
                         if let Some(endpoint) = config.get("endpoint").and_then(|v| v.as_str()) {
                             new_config.endpoint = endpoint.to_string();
