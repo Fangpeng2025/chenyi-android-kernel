@@ -3,16 +3,12 @@
 
 [target.aarch64-linux-android]
 linker = "aarch64-linux-android29-clang"
-rustflags = ["-C", "link-arg=-landroid_logger"]
 
 [target.armv7-linux-androideabi]
 linker = "armv7a-linux-androideabi29-clang"
-rustflags = ["-C", "link-arg=-landroid_logger"]
 
 [target.x86_64-linux-android]
 linker = "x86_64-linux-android29-clang"
-rustflags = ["-C", "link-arg=-landroid_logger"]
 
 [target.i686-linux-android]
 linker = "i686-linux-android29-clang"
-rustflags = ["-C", "link-arg=-landroid_logger"]
