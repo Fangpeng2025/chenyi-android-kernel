@@ -319,7 +319,7 @@ data class KernelConfig(
         json.put("api_key", apiKey)
         json.put("model", modelName)
         json.put("max_tokens", maxTokens)
-        json.put("temperature", temperature)
+        json.put("temperature", temperature.toDouble())  // Float 转 Double
         return json.toString()
     }
 }
