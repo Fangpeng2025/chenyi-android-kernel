@@ -6,24 +6,28 @@ import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.text.selection.SelectionContainer
-import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -32,7 +36,7 @@ import java.text.SimpleDateFormat
 import java.util.*
 
 /**
- * 主 Activity
+ * 微信风格主界面
  */
 class MainActivity : ComponentActivity() {
 
@@ -46,59 +50,29 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
 
         prefs = getSharedPreferences("chenyi_config", Context.MODE_PRIVATE)
-
-        // 初始化内核
         kernel = Kernel(this)
         val initialized = kernel.init()
-
-        // 初始化截图管理器
         screenshotManager = ScreenshotManager(this)
         screenshotManager.init()
-        
-        // 初始化 OCR 引擎
         ocrEngine = OcrEngine(this)
-        
-        // 初始化会话管理器
         sessionManager = SessionManager(this)
 
         setContent {
-            ChenYiTheme {
-                MainScreen(
+            MaterialTheme {
+                WeChatStyleApp(
                     kernelInitialized = initialized,
                     kernel = kernel,
                     prefs = prefs,
                     screenshotManager = screenshotManager,
                     ocrEngine = ocrEngine,
-                    sessionManager = sessionManager,
-                    onRequestScreenshotPermission = {
-                        screenshotManager.requestPermission(this)
-                    },
-                    onCheckAccessibility = {
-                        checkAccessibilityService()
-                    }
+                    sessionManager = sessionManager
                 )
             }
         }
     }
-    
-    /**
-     * 检查无障碍服务是否开启
-     */
-    private fun checkAccessibilityService(): Boolean {
-        val service = ChenyiAccessibilityService.getInstance()
-        if (service == null) {
-            // 引导用户开启无障碍服务
-            Toast.makeText(this, "请先开启无障碍服务", Toast.LENGTH_LONG).show()
-            val intent = android.content.Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS)
-            startActivity(intent)
-            return false
-        }
-        return true
-    }
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: android.content.Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
-        
         if (requestCode == ScreenshotManager.REQUEST_MEDIA_PROJECTION && data != null) {
             val success = screenshotManager.handlePermissionResult(resultCode, data)
             Toast.makeText(this, if (success) "截图权限已授权" else "截图权限被拒绝", Toast.LENGTH_SHORT).show()
@@ -107,493 +81,682 @@ class MainActivity : ComponentActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
-        if (::kernel.isInitialized) {
-            kernel.destroy()
-        }
-        if (::screenshotManager.isInitialized) {
-            screenshotManager.destroy()
-        }
+        if (::kernel.isInitialized) kernel.destroy()
+        if (::screenshotManager.isInitialized) screenshotManager.destroy()
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+/**
+ * 微信风格主应用
+ */
 @Composable
-fun MainScreen(
+fun WeChatStyleApp(
     kernelInitialized: Boolean,
     kernel: Kernel,
     prefs: SharedPreferences,
     screenshotManager: ScreenshotManager,
     ocrEngine: OcrEngine,
-    sessionManager: SessionManager,
-    onRequestScreenshotPermission: () -> Unit,
-    onCheckAccessibility: () -> Boolean
+    sessionManager: SessionManager
 ) {
+    var selectedTab by remember { mutableStateOf(0) }
     val context = LocalContext.current
 
-    // 加载设置
-    var apiEndpoint by remember { mutableStateOf(prefs.getString("api_endpoint", "https://oneapi.xintiandi.online/v1") ?: "") }
-    var apiKey by remember { mutableStateOf(prefs.getString("api_key", "") ?: "") }
-    var modelName by remember { mutableStateOf(prefs.getString("model_name", "glm-5") ?: "glm-5") }
-    
-    // 会话管理
-    var sessions by remember { mutableStateOf(sessionManager.getAllSessions()) }
-    var currentSession by remember { mutableStateOf(sessionManager.getOrCreateCurrentSession()) }
-    var showSessionList by remember { mutableStateOf(false) }
-    
-    // OCR 初始化状态
-    var ocrInitialized by remember { mutableStateOf(false) }
-    var ocrStatus by remember { mutableStateOf("初始化 OCR...") }
-
-    // 启动时初始化 OCR
-    LaunchedEffect(Unit) {
-        ocrStatus = "正在下载 OCR 模型..."
-        ocrInitialized = ocrEngine.init()
-        ocrStatus = if (ocrInitialized) "OCR 就绪" else "OCR 初始化失败"
-    }
-    
-    var inputText by remember { mutableStateOf("") }
-    var isLoading by remember { mutableStateOf(false) }
-    var showSettings by remember { mutableStateOf(false) }
-    var showTools by remember { mutableStateOf(false) }
-    var status by remember { mutableStateOf("内核已就绪") }
-    val scope = rememberCoroutineScope()
-    val snackbarHostState = remember { SnackbarHostState() }
-    
-    // 权限状态
-    val accessibilityEnabled = remember { mutableStateOf(ChenyiAccessibilityService.getInstance() != null) }
-    val screenshotGranted = remember { mutableStateOf(screenshotManager.isAuthorized()) }
-    
-    // 更新权限状态
-    LaunchedEffect(Unit) {
-        accessibilityEnabled.value = ChenyiAccessibilityService.getInstance() != null
-        screenshotGranted.value = screenshotManager.isAuthorized()
-    }
-
     Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { 
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(currentSession.title, fontWeight = FontWeight.Bold, maxLines = 1)
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Surface(
-                            modifier = Modifier.size(8.dp),
-                            color = if (kernelInitialized) Color(0xFF4CAF50) else Color(0xFFF44336),
-                            shape = MaterialTheme.shapes.small
-                        ) {}
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.primaryContainer
-                ),
-                actions = {
-                    // 权限状态指示器
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.padding(end = 8.dp)
-                    ) {
-                        Surface(
-                            modifier = Modifier.size(6.dp),
-                            color = if (accessibilityEnabled.value) Color(0xFF4CAF50) else Color(0xFFF44336),
-                            shape = MaterialTheme.shapes.small
-                        ) {}
-                        Spacer(modifier = Modifier.width(2.dp))
-                        Text("无障碍", style = MaterialTheme.typography.labelSmall)
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Surface(
-                            modifier = Modifier.size(6.dp),
-                            color = if (screenshotGranted.value) Color(0xFF4CAF50) else Color(0xFFFFA726),
-                            shape = MaterialTheme.shapes.small
-                        ) {}
-                        Spacer(modifier = Modifier.width(2.dp))
-                        Text("截图", style = MaterialTheme.typography.labelSmall)
-                    }
-                    IconButton(onClick = { showSessionList = true }) {
-                        Icon(Icons.Default.List, contentDescription = "会话列表")
-                    }
-                    IconButton(onClick = { showTools = true }) {
-                        Icon(Icons.Default.Build, contentDescription = "工具")
-                    }
-                    IconButton(onClick = { showSettings = true }) {
-                        Icon(Icons.Default.Settings, contentDescription = "设置")
-                    }
-                }
-            )
-        },
-        snackbarHost = { SnackbarHost(snackbarHostState) },
+        containerColor = Color(0xFFEDEDED),
         bottomBar = {
-            BottomAppBar {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(8.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    OutlinedTextField(
-                        value = inputText,
-                        onValueChange = { inputText = it },
-                        modifier = Modifier.weight(1f),
-                        placeholder = { Text("输入消息...") },
-                        maxLines = 3
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-IconButton(
-                        onClick = {
-                            if (inputText.isNotBlank() && !isLoading) {
-                                val message = inputText
-                                inputText = ""
-                                
-                                // 添加用户消息到会话
-                                val userMessage = Message(role = "user", content = message)
-                                currentSession = currentSession.addMessage(userMessage)
-                                sessionManager.saveSession(currentSession)
-                                
-                                isLoading = true
-                                status = "正在思考..."
+            WeChatBottomBar(
+                selectedTab = selectedTab,
+                onTabSelected = { selectedTab = it }
+            )
+        }
+    ) { padding ->
+        Box(modifier = Modifier.padding(padding)) {
+            when (selectedTab) {
+                0 -> ChatScreen(kernel, prefs, sessionManager, kernelInitialized)
+                1 -> ToolsScreen(screenshotManager, ocrEngine, kernel)
+                2 -> SettingsScreen(prefs, kernel, screenshotManager)
+                3 -> ProfileScreen(kernelInitialized, screenshotManager)
+            }
+        }
+    }
+}
 
-                                scope.launch {
-                                    try {
-                                        val result = withContext(Dispatchers.IO) {
-                                            // 使用 chatWithTools 自动处理工具调用
-                                            kernel.chatWithTools(message)
-                                        }
-                                        isLoading = false
-                                        if (result.success) {
-                                            val response = result.response ?: "无响应"
-                                            // 添加助手消息到会话
-                                            val assistantMessage = Message(role = "assistant", content = response)
-                                            currentSession = currentSession.addMessage(assistantMessage)
-                                            sessionManager.saveSession(currentSession)
-                                            status = "内核已就绪"
-                                        } else {
-                                            status = "错误: ${result.error}"
-                                            snackbarHostState.showSnackbar(result.error ?: "未知错误")
-                                        }
-                                    } catch (e: Exception) {
-                                        isLoading = false
-                                        status = "错误: ${e.message}"
-                                        snackbarHostState.showSnackbar("错误: ${e.message}")
-                                    }
-                                }
-                            }
-                        },
-                        enabled = kernelInitialized && !isLoading
-                    ) {
-                        if (isLoading) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(24.dp),
-                                strokeWidth = 2.dp
-                            )
-                        } else {
-                            Icon(Icons.Default.Send, contentDescription = "发送")
-                        }
-                    }
+/**
+ * 微信底部导航栏
+ */
+@Composable
+fun WeChatBottomBar(
+    selectedTab: Int,
+    onTabSelected: (Int) -> Unit
+) {
+    val tabs = listOf(
+        "聊天" to Icons.Default.Chat,
+        "工具" to Icons.Default.Build,
+        "设置" to Icons.Default.Settings,
+        "我" to Icons.Default.Person
+    )
+
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        color = Color.White,
+        tonalElevation = 8.dp
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(56.dp),
+            horizontalArrangement = Arrangement.SpaceEvenly
+        ) {
+            tabs.forEachIndexed { index, (label, icon) ->
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxHeight()
+                        .clickable { onTabSelected(index) },
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center
+                ) {
+                    Icon(
+                        imageVector = icon,
+                        contentDescription = label,
+                        tint = if (index == selectedTab) Color(0xFF07C160) else Color.Gray,
+                        modifier = Modifier.size(24.dp)
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = label,
+                        color = if (index == selectedTab) Color(0xFF07C160) else Color.Gray,
+                        fontSize = 12.sp
+                    )
                 }
             }
-        },
-    ) { padding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
+        }
+    }
+}
+
+/**
+ * 聊天界面 - 微信风格
+ */
+@Composable
+fun ChatScreen(
+    kernel: Kernel,
+    prefs: SharedPreferences,
+    sessionManager: SessionManager,
+    kernelInitialized: Boolean
+) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+
+    // 加载配置
+    var apiKey by remember { mutableStateOf(prefs.getString("api_key", "") ?: "") }
+    var apiEndpoint by remember { mutableStateOf(prefs.getString("api_endpoint", "https://oneapi.xintiandi.online/v1") ?: "") }
+    var modelName by remember { mutableStateOf(prefs.getString("model_name", "glm-5") ?: "") }
+
+    // 会话
+    var currentSession by remember { mutableStateOf(sessionManager.getOrCreateCurrentSession()) }
+    var inputText by remember { mutableStateOf("") }
+    var isLoading by remember { mutableStateOf(false) }
+    val listState = rememberLazyListState()
+    var showApiKeyDialog by remember { mutableStateOf(false) }
+
+    // API Key 未设置提示
+    if (apiKey.isBlank()) {
+        AlertDialog(
+            onDismissRequest = { showApiKeyDialog = false },
+            title = { Text("请配置 API Key") },
+            text = { Text("使用前需要先配置 API Key，请前往设置页面") },
+            confirmButton = {
+                TextButton(onClick = { showApiKeyDialog = false }) {
+                    Text("知道了")
+                }
+            }
+        )
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.White)
+    ) {
+        // 标题栏
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            color = Color.White
         ) {
-            // 状态栏
-            Card(
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = currentSession.title,
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Bold
+                )
+                Spacer(modifier = Modifier.weight(1f))
+                // 状态指示
+                Surface(
+                    modifier = Modifier.size(8.dp),
+                    color = if (kernelInitialized) Color(0xFF07C160) else Color.Red,
+                    shape = CircleShape
+                ) {}
+                Spacer(modifier = Modifier.width(4.dp))
+                Text(
+                    text = if (kernelInitialized) "就绪" else "未连接",
+                    fontSize = 12.sp,
+                    color = Color.Gray
+                )
+            }
+        }
+
+        HorizontalDivider(color = Color(0xFFE5E5E5), thickness = 0.5.dp)
+
+        // 消息列表
+        LazyColumn(
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth(),
+            state = listState,
+            contentPadding = PaddingValues(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            items(currentSession.messages) { message ->
+                WeChatMessageBubble(message)
+            }
+        }
+
+        HorizontalDivider(color = Color(0xFFE5E5E5), thickness = 0.5.dp)
+
+        // 输入区域
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            color = Color.White
+        ) {
+            Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(8.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = if (status.contains("错误")) 
-                        MaterialTheme.colorScheme.errorContainer 
-                    else 
-                        MaterialTheme.colorScheme.primaryContainer
+                verticalAlignment = Alignment.Bottom
+            ) {
+                // 输入框
+                OutlinedTextField(
+                    value = inputText,
+                    onValueChange = { inputText = it },
+                    modifier = Modifier
+                        .weight(1f)
+                        .heightIn(min = 40.dp, max = 120.dp),
+                    placeholder = { Text("输入消息", color = Color.Gray) },
+                    shape = RoundedCornerShape(20.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = Color(0xFF07C160),
+                        unfocusedBorderColor = Color(0xFFE5E5E5)
+                    ),
+                    maxLines = 4
                 )
-            ) {
-                Row(
-                    modifier = Modifier.padding(12.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        imageVector = if (status.contains("错误")) Icons.Default.Warning else Icons.Default.CheckCircle,
-                        contentDescription = null,
-                        tint = if (status.contains("错误")) 
-                            MaterialTheme.colorScheme.error 
-                        else 
-                            MaterialTheme.colorScheme.primary
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = status,
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = FontWeight.Medium
-                    )
-                }
-            }
 
-            // 消息列表
-            LazyColumn(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(horizontal = 8.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                items(currentSession.messages) { message ->
-                    MessageCard(message)
-                }
+                Spacer(modifier = Modifier.width(8.dp))
 
-                if (currentSession.messages.isEmpty() && !isLoading) {
-                    item {
-                        Card(
-                            modifier = Modifier.fillMaxWidth(),
-                            colors = CardDefaults.cardColors(
-                                containerColor = MaterialTheme.colorScheme.surfaceVariant
-                            )
-                        ) {
-                            Column(
-                                modifier = Modifier.padding(16.dp),
-                                horizontalAlignment = Alignment.CenterHorizontally
-                            ) {
-                                Icon(
-                                    Icons.Default.Person,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(48.dp),
-                                    tint = MaterialTheme.colorScheme.primary
-                                )
-                                Spacer(modifier = Modifier.height(8.dp))
-                                Text(
-                                    text = "开始对话",
-                                    style = MaterialTheme.typography.titleMedium,
-                                    fontWeight = FontWeight.Bold
-                                )
-                                Text(
-                                    text = "输入消息与晨翼 Agent 开始对话",
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
+                // 发送按钮
+                FilledIconButton(
+                    onClick = {
+                        if (inputText.isNotBlank() && !isLoading && apiKey.isNotBlank()) {
+                            val message = inputText
+                            inputText = ""
+
+                            // 添加用户消息
+                            val userMessage = Message(role = "user", content = message)
+                            currentSession = currentSession.addMessage(userMessage)
+                            sessionManager.saveSession(currentSession)
+                            isLoading = true
+
+                            scope.launch {
+                                try {
+                                    val response = withContext(Dispatchers.IO) {
+                                        kernel.chat(message)
+                                    }
+                                    val assistantMessage = Message(role = "assistant", content = response)
+                                    currentSession = currentSession.addMessage(assistantMessage)
+                                    sessionManager.saveSession(currentSession)
+                                } catch (e: Exception) {
+                                    Toast.makeText(context, "发送失败: ${e.message}", Toast.LENGTH_SHORT).show()
+                                } finally {
+                                    isLoading = false
+                                }
                             }
+                        } else if (apiKey.isBlank()) {
+                            Toast.makeText(context, "请先配置 API Key", Toast.LENGTH_SHORT).show()
                         }
+                    },
+                    modifier = Modifier.size(48.dp),
+                    colors = IconButtonDefaults.filledIconButtonColors(
+                        containerColor = Color(0xFF07C160)
+                    )
+                ) {
+                    if (isLoading) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(20.dp),
+                            color = Color.White,
+                            strokeWidth = 2.dp
+                        )
+                    } else {
+                        Icon(Icons.Default.Send, contentDescription = "发送", tint = Color.White)
                     }
                 }
             }
         }
     }
+}
 
-    // 设置对话框
-    if (showSettings) {
+/**
+ * 微信风格消息气泡
+ */
+@Composable
+fun WeChatMessageBubble(message: Message) {
+    val isUser = message.role == "user"
+
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Start
+    ) {
+        if (!isUser) {
+            // AI 头像
+            Surface(
+                modifier = Modifier.size(40.dp),
+                color = Color(0xFF07C160),
+                shape = CircleShape
+            ) {
+                Icon(
+                    Icons.Default.SmartToy,
+                    contentDescription = "AI",
+                    tint = Color.White,
+                    modifier = Modifier.padding(8.dp)
+                )
+            }
+            Spacer(modifier = Modifier.width(8.dp))
+        }
+
+        // 消息气泡
+        Surface(
+            modifier = Modifier.widthIn(max = 280.dp),
+            color = if (isUser) Color(0xFF95EC69) else Color.White,
+            shape = RoundedCornerShape(8.dp),
+            tonalElevation = if (isUser) 0.dp else 2.dp
+        ) {
+            Text(
+                text = message.content,
+                modifier = Modifier.padding(12.dp),
+                fontSize = 15.sp,
+                lineHeight = 20.sp
+            )
+        }
+
+        if (isUser) {
+            Spacer(modifier = Modifier.width(8.dp))
+            // 用户头像
+            Surface(
+                modifier = Modifier.size(40.dp),
+                color = Color(0xFF07C160),
+                shape = CircleShape
+            ) {
+                Icon(
+                    Icons.Default.Person,
+                    contentDescription = "用户",
+                    tint = Color.White,
+                    modifier = Modifier.padding(8.dp)
+                )
+            }
+        }
+    }
+}
+
+/**
+ * 工具界面
+ */
+@Composable
+fun ToolsScreen(
+    screenshotManager: ScreenshotManager,
+    ocrEngine: OcrEngine,
+    kernel: Kernel
+) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.White)
+    ) {
+        // 标题
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            color = Color.White
+        ) {
+            Text(
+                text = "工具",
+                modifier = Modifier.padding(16.dp),
+                fontSize = 20.sp,
+                fontWeight = FontWeight.Bold
+            )
+        }
+
+        HorizontalDivider(color = Color(0xFFE5E5E5), thickness = 0.5.dp)
+
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            // 截图工具
+            item {
+                WeChatToolItem(
+                    icon = Icons.Default.Screenshot,
+                    title = "截图",
+                    subtitle = if (screenshotManager.isAuthorized()) "已授权 - 点击截图" else "未授权 - 点击授权",
+                    onClick = {
+                        if (!screenshotManager.isAuthorized()) {
+                            Toast.makeText(context, "请授权截图权限", Toast.LENGTH_SHORT).show()
+                            screenshotManager.requestPermission(context as ComponentActivity)
+                        } else {
+                            scope.launch {
+                                try {
+                                    val bitmap = screenshotManager.captureScreen()
+                                    Toast.makeText(context, "截图成功", Toast.LENGTH_SHORT).show()
+                                } catch (e: Exception) {
+                                    Toast.makeText(context, "截图失败: ${e.message}", Toast.LENGTH_SHORT).show()
+                                }
+                            }
+                        }
+                    }
+                )
+            }
+
+            // OCR 工具
+            item {
+                WeChatToolItem(
+                    icon = Icons.Default.DocumentScanner,
+                    title = "OCR 识别",
+                    subtitle = "识别图片中的文字",
+                    onClick = {
+                        Toast.makeText(context, "请先截图", Toast.LENGTH_SHORT).show()
+                    }
+                )
+            }
+
+            // 执行 Shell
+            item {
+                WeChatToolItem(
+                    icon = Icons.Default.Terminal,
+                    title = "执行命令",
+                    subtitle = "执行 Shell 命令",
+                    onClick = {
+                        Toast.makeText(context, "功能开发中", Toast.LENGTH_SHORT).show()
+                    }
+                )
+            }
+        }
+    }
+}
+
+/**
+ * 微信风格工具项
+ */
+@Composable
+fun WeChatToolItem(
+    icon: ImageVector,
+    title: String,
+    subtitle: String,
+    onClick: () -> Unit
+) {
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick),
+        color = Color.White
+    ) {
+        Row(
+            modifier = Modifier.padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Surface(
+                modifier = Modifier.size(48.dp),
+                color = Color(0xFF07C160),
+                shape = RoundedCornerShape(8.dp)
+            ) {
+                Icon(
+                    icon,
+                    contentDescription = title,
+                    tint = Color.White,
+                    modifier = Modifier.padding(12.dp)
+                )
+            }
+            Spacer(modifier = Modifier.width(16.dp))
+            Column {
+                Text(text = title, fontSize = 16.sp, fontWeight = FontWeight.Medium)
+                Text(text = subtitle, fontSize = 13.sp, color = Color.Gray)
+            }
+        }
+    }
+}
+
+/**
+ * 设置界面 - 微信风格
+ */
+@Composable
+fun SettingsScreen(
+    prefs: SharedPreferences,
+    kernel: Kernel,
+    screenshotManager: ScreenshotManager
+) {
+    val context = LocalContext.current
+
+    // 配置
+    var apiKey by remember { mutableStateOf(prefs.getString("api_key", "") ?: "") }
+    var apiEndpoint by remember { mutableStateOf(prefs.getString("api_endpoint", "https://oneapi.xintiandi.online/v1") ?: "") }
+    var modelName by remember { mutableStateOf(prefs.getString("model_name", "glm-5") ?: "") }
+    
+    var showApiKeyEditor by remember { mutableStateOf(false) }
+    var showEndpointEditor by remember { mutableStateOf(false) }
+    var showModelEditor by remember { mutableStateOf(false) }
+    
+    var tempApiKey by remember { mutableStateOf(apiKey) }
+    var tempEndpoint by remember { mutableStateOf(apiEndpoint) }
+    var tempModel by remember { mutableStateOf(modelName) }
+    var showPassword by remember { mutableStateOf(false) }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color(0xFFEDEDED))
+    ) {
+        // 标题
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            color = Color.White
+        ) {
+            Text(
+                text = "设置",
+                modifier = Modifier.padding(16.dp),
+                fontSize = 20.sp,
+                fontWeight = FontWeight.Bold
+            )
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // API 配置组
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            color = Color.White
+        ) {
+            Column {
+                WeChatSettingItem(
+                    title = "API Key",
+                    subtitle = if (apiKey.isBlank()) "未设置" else "${apiKey.take(10)}...",
+                    onClick = { 
+                        tempApiKey = apiKey
+                        showApiKeyEditor = true 
+                    }
+                )
+                HorizontalDivider(color = Color(0xFFE5E5E5), thickness = 0.5.dp)
+                WeChatSettingItem(
+                    title = "API Endpoint",
+                    subtitle = apiEndpoint,
+                    onClick = { 
+                        tempEndpoint = apiEndpoint
+                        showEndpointEditor = true 
+                    }
+                )
+                HorizontalDivider(color = Color(0xFFE5E5E5), thickness = 0.5.dp)
+                WeChatSettingItem(
+                    title = "模型名称",
+                    subtitle = modelName,
+                    onClick = { 
+                        tempModel = modelName
+                        showModelEditor = true 
+                    }
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // 权限配置组
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            color = Color.White
+        ) {
+            Column {
+                WeChatSettingItem(
+                    title = "无障碍服务",
+                    subtitle = if (ChenyiAccessibilityService.getInstance() != null) "已开启" else "未开启 - 点击开启",
+                    onClick = {
+                        Toast.makeText(context, "请开启无障碍服务", Toast.LENGTH_SHORT).show()
+                        val intent = android.content.Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS)
+                        context.startActivity(intent)
+                    }
+                )
+                HorizontalDivider(color = Color(0xFFE5E5E5), thickness = 0.5.dp)
+                WeChatSettingItem(
+                    title = "截图权限",
+                    subtitle = if (screenshotManager.isAuthorized()) "已授权" else "未授权 - 点击授权",
+                    onClick = {
+                        Toast.makeText(context, "请授权截图权限", Toast.LENGTH_SHORT).show()
+                        screenshotManager.requestPermission(context as ComponentActivity)
+                    }
+                )
+            }
+        }
+    }
+
+    // API Key 编辑对话框
+    if (showApiKeyEditor) {
         AlertDialog(
-            onDismissRequest = { showSettings = false },
-            title = { Text("设置", fontWeight = FontWeight.Bold) },
+            onDismissRequest = { showApiKeyEditor = false },
+            title = { Text("API Key") },
             text = {
-                Column(
-                    modifier = Modifier.verticalScroll(rememberScrollState()),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
+                Column {
                     OutlinedTextField(
-                        value = apiEndpoint,
-                        onValueChange = { apiEndpoint = it },
-                        label = { Text("API 端点") },
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true
-                    )
-                    OutlinedTextField(
-                        value = apiKey,
-                        onValueChange = { apiKey = it },
+                        value = tempApiKey,
+                        onValueChange = { tempApiKey = it },
                         label = { Text("API Key") },
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true
+                        placeholder = { Text("输入 API Key") },
+                        visualTransformation = if (showPassword) VisualTransformation.None else PasswordVisualTransformation(),
+                        trailingIcon = {
+                            IconButton(onClick = { showPassword = !showPassword }) {
+                                Icon(
+                                    if (showPassword) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                                    contentDescription = if (showPassword) "隐藏" else "显示"
+                                )
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth()
                     )
-                    OutlinedTextField(
-                        value = modelName,
-                        onValueChange = { modelName = it },
-                        label = { Text("模型名称") },
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true
-                    )
-                    Divider()
-                    Text("当前配置:", fontWeight = FontWeight.Bold)
-                    Text("端点: $apiEndpoint", style = MaterialTheme.typography.bodySmall)
-                    Text("模型: $modelName", style = MaterialTheme.typography.bodySmall)
                 }
             },
             confirmButton = {
-                TextButton(onClick = {
-                    // 保存到 SharedPreferences
-                    prefs.edit()
-                        .putString("api_endpoint", apiEndpoint)
-                        .putString("api_key", apiKey)
-                        .putString("model_name", modelName)
-                        .apply()
-                    
-                    // 更新内核配置
-                    val config = KernelConfig(
-                        apiEndpoint = apiEndpoint,
-                        apiKey = apiKey,
-                        modelName = modelName
-                    )
-                    kernel.updateConfig(config)
-                    
-                    showSettings = false
-                    status = "设置已保存并生效"
-                }) {
+                TextButton(
+                    onClick = {
+                        apiKey = tempApiKey
+                        prefs.edit().putString("api_key", tempApiKey).apply()
+                        Toast.makeText(context, "API Key 已保存", Toast.LENGTH_SHORT).show()
+                        showApiKeyEditor = false
+                    }
+                ) {
                     Text("保存")
                 }
             },
             dismissButton = {
-                TextButton(onClick = { showSettings = false }) {
+                TextButton(onClick = { showApiKeyEditor = false }) {
                     Text("取消")
                 }
             }
         )
     }
 
-    // 工具对话框
-    if (showTools) {
+    // Endpoint 编辑对话框
+    if (showEndpointEditor) {
         AlertDialog(
-            onDismissRequest = { showTools = false },
-            title = { Text("工具列表", fontWeight = FontWeight.Bold) },
+            onDismissRequest = { showEndpointEditor = false },
+            title = { Text("API Endpoint") },
             text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    ToolItem("截图", "截取当前屏幕") {
-                        if (screenshotManager.isAuthorized()) {
-                            val path = screenshotManager.captureAndSave()
-                            if (path != null) {
-                                status = "截图已保存: $path"
-                            } else {
-                                status = "截图失败"
-                            }
-                        } else {
-                            onRequestScreenshotPermission()
-                        }
-                        showTools = false
-                    }
-                    ToolItem("点击", "点击屏幕坐标") { /* TODO */ showTools = false }
-                    ToolItem("滑动", "滑动屏幕") { /* TODO */ showTools = false }
-                    ToolItem("OCR", "识别屏幕文字") { /* TODO */ showTools = false }
-                    ToolItem("打开应用", "打开指定应用") { /* TODO */ showTools = false }
-                }
+                OutlinedTextField(
+                    value = tempEndpoint,
+                    onValueChange = { tempEndpoint = it },
+                    label = { Text("Endpoint") },
+                    placeholder = { Text("https://api.example.com/v1") },
+                    modifier = Modifier.fillMaxWidth()
+                )
             },
             confirmButton = {
-                TextButton(onClick = { showTools = false }) {
-                    Text("关闭")
+                TextButton(
+                    onClick = {
+                        apiEndpoint = tempEndpoint
+                        prefs.edit().putString("api_endpoint", tempEndpoint).apply()
+                        Toast.makeText(context, "Endpoint 已保存", Toast.LENGTH_SHORT).show()
+                        showEndpointEditor = false
+                    }
+                ) {
+                    Text("保存")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showEndpointEditor = false }) {
+                    Text("取消")
                 }
             }
         )
     }
-    
-    // 会话列表对话框
-    if (showSessionList) {
+
+    // Model 编辑对话框
+    if (showModelEditor) {
         AlertDialog(
-            onDismissRequest = { showSessionList = false },
-            title = { Text("会话列表", fontWeight = FontWeight.Bold) },
+            onDismissRequest = { showModelEditor = false },
+            title = { Text("模型名称") },
             text = {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(400.dp)
-                        .verticalScroll(rememberScrollState()),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    // 新建会话按钮
-                    OutlinedButton(
-                        onClick = {
-                            val newSession = sessionManager.createSession()
-                            sessionManager.setCurrentSession(newSession.id)
-                            currentSession = newSession
-                            sessions = sessionManager.getAllSessions()
-                            showSessionList = false
-                            status = "已创建新会话"
-                        },
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Icon(Icons.Default.Add, contentDescription = null)
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("新建会话")
-                    }
-                    
-                    Divider()
-                    
-                    // 会话列表
-                    sessions.forEach { session ->
-                        Card(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 4.dp),
-                            colors = CardDefaults.cardColors(
-                                containerColor = if (session.id == currentSession.id)
-                                    MaterialTheme.colorScheme.primaryContainer
-                                else
-                                    MaterialTheme.colorScheme.surfaceVariant
-                            ),
-                            onClick = {
-                                sessionManager.setCurrentSession(session.id)
-                                currentSession = session
-                                showSessionList = false
-                            }
-                        ) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(12.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(
-                                        text = session.title,
-                                        fontWeight = FontWeight.Bold,
-                                        maxLines = 1
-                                    )
-                                    Text(
-                                        text = "${session.messages.size} 条消息 · ${formatTime(session.updatedAt)}",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
-                                
-                                // 删除按钮
-                                IconButton(
-                                    onClick = {
-                                        sessionManager.deleteSession(session.id)
-                                        sessions = sessionManager.getAllSessions()
-                                        
-                                        // 如果删除的是当前会话，切换到其他会话
-                                        if (session.id == currentSession.id) {
-                                            val remaining = sessionManager.getAllSessions()
-                                            if (remaining.isNotEmpty()) {
-                                                currentSession = remaining.first()
-                                                sessionManager.setCurrentSession(currentSession.id)
-                                            } else {
-                                                // 没有会话了，创建新的
-                                                val newSession = sessionManager.createSession()
-                                                sessionManager.setCurrentSession(newSession.id)
-                                                currentSession = newSession
-                                            }
-                                        }
-                                        status = "已删除会话"
-                                    }
-                                ) {
-                                    Icon(
-                                        Icons.Default.Delete,
-                                        contentDescription = "删除",
-                                        tint = MaterialTheme.colorScheme.error
-                                    )
-                                }
-                            }
-                        }
-                    }
-                    
-                    if (sessions.isEmpty()) {
-                        Text(
-                            text = "暂无会话",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(16.dp)
-                        )
-                    }
-                }
+                OutlinedTextField(
+                    value = tempModel,
+                    onValueChange = { tempModel = it },
+                    label = { Text("模型") },
+                    placeholder = { Text("glm-5") },
+                    modifier = Modifier.fillMaxWidth()
+                )
             },
             confirmButton = {
-                TextButton(onClick = { showSessionList = false }) {
-                    Text("关闭")
+                TextButton(
+                    onClick = {
+                        modelName = tempModel
+                        prefs.edit().putString("model_name", tempModel).apply()
+                        Toast.makeText(context, "模型名称已保存", Toast.LENGTH_SHORT).show()
+                        showModelEditor = false
+                    }
+                ) {
+                    Text("保存")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showModelEditor = false }) {
+                    Text("取消")
                 }
             }
         )
@@ -601,212 +764,122 @@ IconButton(
 }
 
 /**
- * 格式化时间
+ * 微信风格设置项
  */
-fun formatTime(timestamp: Long): String {
-    val now = System.currentTimeMillis()
-    val diff = now - timestamp
-    
-    return when {
-        diff < 60_000 -> "刚刚"
-        diff < 3600_000 -> "${diff / 60_000}分钟前"
-        diff < 86400_000 -> "${diff / 3600_000}小时前"
-        diff < 604800_000 -> "${diff / 86400_000}天前"
-        else -> {
-            val sdf = SimpleDateFormat("MM-dd HH:mm", Locale.getDefault())
-            sdf.format(Date(timestamp))
-        }
-    }
-}
-
 @Composable
-fun MessageCard(message: Message) {
-    val isUser = message.role == "user"
-    val timeFormat = SimpleDateFormat("HH:mm", Locale.getDefault())
-
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = if (isUser)
-                MaterialTheme.colorScheme.primaryContainer
-            else
-                MaterialTheme.colorScheme.surfaceVariant
-        )
-    ) {
-        Column(
-            modifier = Modifier.padding(12.dp)
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        imageVector = if (isUser) Icons.Default.Person else Icons.Default.SmartToy,
-                        contentDescription = null,
-                        modifier = Modifier.size(20.dp),
-                        tint = if (isUser)
-                            MaterialTheme.colorScheme.primary
-                        else
-                            MaterialTheme.colorScheme.secondary
-                    )
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text(
-                        text = if (isUser) "用户" else "助手",
-                        style = MaterialTheme.typography.labelMedium,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-                
-                Text(
-                    text = timeFormat.format(Date(message.timestamp)),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-            
-            Spacer(modifier = Modifier.height(8.dp))
-            
-            // 消息内容
-            SelectionContainer {
-                Text(
-                    text = message.content,
-                    style = MaterialTheme.typography.bodyLarge,
-                    modifier = Modifier.fillMaxWidth()
-                )
-            }
-            
-            // 工具调用记录
-            if (message.toolCalls.isNotEmpty()) {
-                Spacer(modifier = Modifier.height(8.dp))
-                Divider()
-                Spacer(modifier = Modifier.height(8.dp))
-                
-                Text(
-                    text = "工具执行记录",
-                    style = MaterialTheme.typography.labelMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.primary
-                )
-                
-                message.toolCalls.forEach { toolCall ->
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 2.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(
-                            imageVector = if (toolCall.success) Icons.Default.Check else Icons.Default.Close,
-                            contentDescription = null,
-                            modifier = Modifier.size(14.dp),
-                            tint = if (toolCall.success) Color(0xFF4CAF50) else MaterialTheme.colorScheme.error
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text(
-                            text = toolCall.name,
-                            style = MaterialTheme.typography.labelSmall,
-                            fontWeight = FontWeight.Bold
-                        )
-                        if (toolCall.result != null) {
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text(
-                                text = "→ ${toolCall.result.take(20)}",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
-                }
-            }
-            
-            // 操作按钮
-            Spacer(modifier = Modifier.height(8.dp))
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.End
-            ) {
-                // 复制按钮
-                IconButton(
-                    onClick = {
-                        // TODO: 复制到剪贴板
-                    },
-                    modifier = Modifier.size(24.dp)
-                ) {
-                    Icon(
-                        Icons.Default.ContentCopy,
-                        contentDescription = "复制",
-                        modifier = Modifier.size(16.dp),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                
-                // 删除按钮
-                IconButton(
-                    onClick = {
-                        // TODO: 删除消息
-                    },
-                    modifier = Modifier.size(24.dp)
-                ) {
-                    Icon(
-                        Icons.Default.DeleteOutline,
-                        contentDescription = "删除",
-                        modifier = Modifier.size(16.dp),
-                        tint = MaterialTheme.colorScheme.error
-                    )
-                }
-                
-                // 重发按钮（仅用户消息）
-                if (isUser) {
-                    IconButton(
-                        onClick = {
-                            // TODO: 重发消息
-                        },
-                        modifier = Modifier.size(24.dp)
-                    ) {
-                        Icon(
-                            Icons.Default.Refresh,
-                            contentDescription = "重发",
-                            modifier = Modifier.size(16.dp),
-                            tint = MaterialTheme.colorScheme.primary
-                        )
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-fun ToolItem(name: String, description: String, onClick: () -> Unit) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        onClick = onClick
+fun WeChatSettingItem(
+    title: String,
+    subtitle: String,
+    onClick: () -> Unit
+) {
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick),
+        color = Color.White
     ) {
         Row(
-            modifier = Modifier.padding(12.dp),
+            modifier = Modifier.padding(16.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(text = title, fontSize = 16.sp)
+                Text(text = subtitle, fontSize = 13.sp, color = Color.Gray)
+            }
             Icon(
-                Icons.Default.Build,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary
+                Icons.Default.ChevronRight,
+                contentDescription = "进入",
+                tint = Color.Gray,
+                modifier = Modifier.size(20.dp)
             )
-            Spacer(modifier = Modifier.width(12.dp))
-            Column {
-                Text(name, fontWeight = FontWeight.Bold)
+        }
+    }
+}
+
+/**
+ * 个人中心界面
+ */
+@Composable
+fun ProfileScreen(
+    kernelInitialized: Boolean,
+    screenshotManager: ScreenshotManager
+) {
+    val context = LocalContext.current
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color(0xFFEDEDED))
+    ) {
+        // 头像和名称
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            color = Color.White
+        ) {
+            Column(
+                modifier = Modifier.padding(24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Surface(
+                    modifier = Modifier.size(80.dp),
+                    color = Color(0xFF07C160),
+                    shape = CircleShape
+                ) {
+                    Icon(
+                        Icons.Default.SmartToy,
+                        contentDescription = "头像",
+                        tint = Color.White,
+                        modifier = Modifier.padding(20.dp)
+                    )
+                }
+                Spacer(modifier = Modifier.height(16.dp))
                 Text(
-                    description,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    text = "晨翼 Agent",
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.Bold
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = "版本 1.0.0",
+                    fontSize = 14.sp,
+                    color = Color.Gray
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // 状态信息
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            color = Color.White
+        ) {
+            Column {
+                WeChatSettingItem(
+                    title = "内核状态",
+                    subtitle = if (kernelInitialized) "正常运行" else "未初始化",
+                    onClick = {}
+                )
+                HorizontalDivider(color = Color(0xFFE5E5E5), thickness = 0.5.dp)
+                WeChatSettingItem(
+                    title = "无障碍服务",
+                    subtitle = if (ChenyiAccessibilityService.getInstance() != null) "已开启" else "未开启",
+                    onClick = {
+                        Toast.makeText(context, "请开启无障碍服务", Toast.LENGTH_SHORT).show()
+                        val intent = android.content.Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS)
+                        context.startActivity(intent)
+                    }
+                )
+                HorizontalDivider(color = Color(0xFFE5E5E5), thickness = 0.5.dp)
+                WeChatSettingItem(
+                    title = "截图权限",
+                    subtitle = if (screenshotManager.isAuthorized()) "已授权" else "未授权",
+                    onClick = {
+                        Toast.makeText(context, "请授权截图权限", Toast.LENGTH_SHORT).show()
+                        screenshotManager.requestPermission(context as ComponentActivity)
+                    }
                 )
             }
         }
     }
 }
-
-// 使用 Session.kt 中定义的完整 Message 类
-// Message 类已在 Session.kt 中定义，包含 id, role, content, timestamp, toolCalls 字段
-
-// ChenYiTheme 已在 Theme.kt 中定义，使用 Material Design 3 完整主题
-// 包含动态颜色、深色模式支持等高级功能
