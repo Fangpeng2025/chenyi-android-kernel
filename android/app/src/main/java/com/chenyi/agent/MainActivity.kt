@@ -315,7 +315,7 @@ fun ChatScreen(
                                     val response = withContext(Dispatchers.IO) {
                                         kernel.chat(message)
                                     }
-                                    val assistantMessage = Message(role = "assistant", content = response)
+                                    val assistantMessage = Message(role = "assistant", content = response.response ?: response.error ?: "无响应")
                                     currentSession = currentSession.addMessage(assistantMessage)
                                     sessionManager.saveSession(currentSession)
                                 } catch (e: Exception) {
@@ -460,8 +460,12 @@ fun ToolsScreen(
                         } else {
                             scope.launch {
                                 try {
-                                    val bitmap = screenshotManager.captureScreen()
-                                    Toast.makeText(context, "截图成功", Toast.LENGTH_SHORT).show()
+                                    val bitmap = screenshotManager.capture()
+                                    if (bitmap != null) {
+                                        Toast.makeText(context, "截图成功", Toast.LENGTH_SHORT).show()
+                                    } else {
+                                        Toast.makeText(context, "截图失败", Toast.LENGTH_SHORT).show()
+                                    }
                                 } catch (e: Exception) {
                                     Toast.makeText(context, "截图失败: ${e.message}", Toast.LENGTH_SHORT).show()
                                 }
