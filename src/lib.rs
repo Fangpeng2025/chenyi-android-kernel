@@ -36,33 +36,3 @@ pub mod jni;
 // 导出常用类型
 pub use types::{Result, Error, KernelConfig};
 pub use agent::AgentKernel;
-
-use once_cell::sync::OnceCell;
-use parking_lot::Mutex;
-
-/// 全局内核实例
-static KERNEL: OnceCell<Mutex<AgentKernel>> = OnceCell::new();
-
-/// 初始化内核
-pub fn init(config: KernelConfig) -> Result<()> {
-    // 初始化 Android 日志
-    #[cfg(target_os = "android")]
-    {
-        android_logger::init_once(
-            android_logger::Config::default()
-                .with_max_level(log::LevelFilter::Debug)
-                .with_tag("ChenyiKernel"),
-        );
-        log::info!("[Kernel] Android 日志已初始化");
-    }
-    
-    let kernel = AgentKernel::new(config)?;
-    KERNEL.set(Mutex::new(kernel))
-        .map_err(|_| Error::AlreadyInitialized)?;
-    Ok(())
-}
-
-/// 获取内核实例
-pub fn get_kernel() -> Option<&'static Mutex<AgentKernel>> {
-    KERNEL.get()
-}

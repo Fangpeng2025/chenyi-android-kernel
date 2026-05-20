@@ -28,20 +28,32 @@ class ChenyiAccessibilityService : AccessibilityService() {
 
     private var ocrEngine: OcrEngine? = null
     private var screenshotManager: ScreenshotManager? = null
+    private val ocrInitialized = java.util.concurrent.atomic.AtomicBoolean(false)
+    private val ocrInitFailed = java.util.concurrent.atomic.AtomicBoolean(false)
+    private var ocrInitError: String? = null
 
     override fun onServiceConnected() {
         super.onServiceConnected()
         instance = this
         
-        // 初始化 OCR（同步）
-        ocrEngine = OcrEngine(applicationContext)
-        Thread {
-            ocrEngine?.initSync()
-        }.start()
-        
-        // 初始化截图管理器
+        // 初始化截图管理器（同步）
         screenshotManager = ScreenshotManager(applicationContext)
         screenshotManager?.init()
+        
+        // 初始化 OCR（后台线程，避免阻塞）
+        Thread {
+            try {
+                val engine = OcrEngine(applicationContext)
+                engine.initSync()
+                ocrEngine = engine
+                ocrInitialized.set(true)
+                Log.d(TAG, "OCR 初始化完成")
+            } catch (e: Exception) {
+                ocrInitFailed.set(true)
+                ocrInitError = e.message
+                Log.e(TAG, "OCR 初始化失败: ${e.message}", e)
+            }
+        }.start()
         
         Log.d(TAG, "无障碍服务已连接")
     }
@@ -95,6 +107,16 @@ class ChenyiAccessibilityService : AccessibilityService() {
 
     private fun screenshot(params: JSONObject): Result {
         return try {
+            // 检查截图管理器是否初始化
+            if (screenshotManager == null || !screenshotManager!!.isInitialized()) {
+                return Result.error("截图管理器未初始化")
+            }
+            
+            // 检查截图权限
+            if (!screenshotManager!!.hasPermission()) {
+                return Result.error("未获取截图权限，请在设置中授权")
+            }
+            
             val region = params.optJSONObject("region")
             
             val bitmap = if (region != null) {
@@ -138,10 +160,22 @@ class ChenyiAccessibilityService : AccessibilityService() {
     // ============ 点击 ============
 
     private fun tap(params: JSONObject): Result {
-        val x = params.getInt("x")
-        val y = params.getInt("y")
-
         return try {
+            // 参数验证
+            if (!params.has("x") || !params.has("y")) {
+                return Result.error("缺少必需参数: x 或 y")
+            }
+            
+            val x = params.getInt("x")
+            val y = params.getInt("y")
+            
+            // 坐标范围检查
+            val screenWidth = screenshotManager?.screenWidth ?: 1080
+            val screenHeight = screenshotManager?.screenHeight ?: 1920
+            if (x < 0 || x > screenWidth || y < 0 || y > screenHeight) {
+                return Result.error("坐标超出屏幕范围: ($x, $y), 屏幕尺寸: ${screenWidth}x${screenHeight}")
+            }
+
             val path = Path()
             path.moveTo(x.toFloat(), y.toFloat())
 
@@ -151,10 +185,15 @@ class ChenyiAccessibilityService : AccessibilityService() {
 
             val success = dispatchGesture(gesture, null, null)
             Log.d(TAG, "点击: ($x, $y) -> $success")
-            Result.ok(mapOf("x" to x, "y" to y, "success" to success))
+            
+            if (success) {
+                Result.ok(mapOf("x" to x, "y" to y, "success" to true))
+            } else {
+                Result.error("手势分发失败，可能无障碍服务未正确配置")
+            }
         } catch (e: Exception) {
-            Log.e(TAG, "点击失败", e)
-            Result.error(e.message ?: "点击失败")
+            Log.e(TAG, "点击失败: ${e.message}", e)
+            Result.error("点击失败: ${e.message}\n堆栈: ${e.stackTrace.take(3).joinToString()}")
         }
     }
 
@@ -184,14 +223,30 @@ class ChenyiAccessibilityService : AccessibilityService() {
 
     // ============ 滑动 ============
 
-    private fun swipe(params: JSONObject): Result {
-        val startX = params.getInt("start_x")
-        val startY = params.getInt("start_y")
-        val endX = params.getInt("end_x")
-        val endY = params.getInt("end_y")
-        val duration = params.optLong("duration", 300)
-
+private fun swipe(params: JSONObject): Result {
         return try {
+            // 参数验证
+            val requiredParams = listOf("start_x", "start_y", "end_x", "end_y")
+            for (param in requiredParams) {
+                if (!params.has(param)) {
+                    return Result.error("缺少必需参数: $param")
+                }
+            }
+            
+            val startX = params.getInt("start_x")
+            val startY = params.getInt("start_y")
+            val endX = params.getInt("end_x")
+            val endY = params.getInt("end_y")
+            val duration = params.optLong("duration", 300)
+            
+            // 坐标范围检查
+            val screenWidth = screenshotManager?.screenWidth ?: 1080
+            val screenHeight = screenshotManager?.screenHeight ?: 1920
+            val coords = listOf(startX, endX, startY, endY)
+            if (coords.any { it < 0 || it > maxOf(screenWidth, screenHeight) }) {
+                return Result.error("坐标超出屏幕范围: 起点($startX,$startY) 终点($endX,$endY), 屏幕: ${screenWidth}x${screenHeight}")
+            }
+
             val path = Path()
             path.moveTo(startX.toFloat(), startY.toFloat())
             path.lineTo(endX.toFloat(), endY.toFloat())
@@ -201,20 +256,25 @@ class ChenyiAccessibilityService : AccessibilityService() {
                 .build()
 
             val success = dispatchGesture(gesture, null, null)
-            Log.d(TAG, "滑动: ($startX, $startY) -> ($endX, $endY) ${duration}ms -> $success")
-            Result.ok(mapOf(
-                "start" to listOf(startX, startY),
-                "end" to listOf(endX, endY),
-                "duration" to duration,
-                "success" to success
-            ))
+            Log.d(TAG, "滑动: ($startX,$startY) -> ($endX,$endY) ${duration}ms -> $success")
+            
+            if (success) {
+                Result.ok(mapOf(
+                    "start_x" to startX,
+                    "start_y" to startY,
+                    "end_x" to endX,
+                    "end_y" to endY,
+                    "duration" to duration,
+                    "success" to true
+                ))
+            } else {
+                Result.error("手势分发失败，可能无障碍服务未正确配置")
+            }
         } catch (e: Exception) {
-            Log.e(TAG, "滑动失败", e)
-            Result.error(e.message ?: "滑动失败")
+            Log.e(TAG, "滑动失败: ${e.message}", e)
+            Result.error("滑动失败: ${e.message}\n堆栈: ${e.stackTrace.take(3).joinToString()}")
         }
     }
-
-    // ============ 输入文本 ============
 
     private fun typeText(params: JSONObject): Result {
         val text = params.getString("text")
@@ -347,6 +407,16 @@ class ChenyiAccessibilityService : AccessibilityService() {
     // ============ OCR ============
 
     private fun ocr(params: JSONObject): Result {
+        // 检查 OCR 是否初始化失败
+        if (ocrInitFailed.get()) {
+            return Result.error("OCR 初始化失败: ${ocrInitError ?: "未知错误"}")
+        }
+        
+        // 检查 OCR 是否初始化完成
+        if (!ocrInitialized.get()) {
+            return Result.error("OCR 正在初始化，请稍后再试")
+        }
+        
         return try {
             // 先截图
             val bitmap = screenshotManager?.capture()

@@ -1,4 +1,7 @@
 //! 安卓原生工具模块
+//! 
+//! 注意：当前架构下，工具执行在 Kotlin 端完成（通过 AccessibilityService）。
+//! 此模块保留用于未来可能的优化（如直接在 Rust 端调用 JNI）。
 
 pub mod screen;
 pub mod input;
@@ -36,11 +39,13 @@ impl ToolResult {
 /// JNI 回调类型
 pub type JniCallback = unsafe extern "C" fn(tool: *const i8, params: *const i8) -> *const i8;
 
-/// 安卓工具集合
+/// 安卓工具集合（当前架构下未使用）
+#[deprecated(note = "当前架构下工具在 Kotlin 端执行，此类未使用")]
 pub struct AndroidTools {
     jni_callback: Option<JniCallback>,
 }
 
+#[allow(deprecated)]
 impl AndroidTools {
     pub fn new() -> Self {
         Self { jni_callback: None }

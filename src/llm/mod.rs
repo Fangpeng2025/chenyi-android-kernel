@@ -47,7 +47,7 @@ impl ChatMessage {
     pub fn assistant_with_tools(content: &str, tool_calls: Vec<ToolCall>) -> Self {
         Self {
             role: "assistant".to_string(),
-            content: Some(content.to_string()),
+            content: if content.is_empty() { None } else { Some(content.to_string()) },
             tool_calls: Some(tool_calls),
             tool_call_id: None,
         }
@@ -129,35 +129,74 @@ struct Choice {
 
 /// LLM 客户端
 pub struct LlmClient {
-    config: LlmConfig,
+    pub config: LlmConfig,
     client: reqwest::Client,
 }
 
 impl LlmClient {
     pub fn new(config: LlmConfig) -> Result<Self> {
         let client = reqwest::Client::builder()
-            .timeout(Duration::from_secs(60))
+            .timeout(Duration::from_secs(120))  // 增加超时时间
             .connect_timeout(Duration::from_secs(10))
+            .retry(3)  // 自动重试 3 次
             .build()
             .map_err(|e| Error::Other(format!("创建 HTTP 客户端失败: {}", e)))?;
         
         Ok(Self { config, client })
     }
     
-    /// 发送聊天请求（带工具支持）
+    /// 发送聊天请求（带工具支持和自动重试）
     pub async fn chat_with_tools(&self, messages: &[ChatMessage], tools: Vec<ToolDefinition>) -> Result<ResponseMessage> {
+        const MAX_RETRIES: usize = 3;
+        const RETRY_DELAY_MS: u64 = 1000;
+        
+        for attempt in 1..=MAX_RETRIES {
+            let result = self.chat_with_tools_internal(messages, tools.clone()).await;
+            
+            match result {
+                Ok(response) => return Ok(response),
+                Err(e) => {
+                    // 检查是否是可重试的错误
+                    let error_msg = e.to_string();
+                    let should_retry = error_msg.contains("timeout") 
+                        || error_msg.contains("connection")
+                        || error_msg.contains("network")
+                        || error_msg.contains("503")
+                        || error_msg.contains("502");
+                    
+                    if should_retry && attempt < MAX_RETRIES {
+                        log::warn!("[LLM] 第 {} 次请求失败: {}，{}ms 后重试", 
+                            attempt, error_msg, RETRY_DELAY_MS);
+                        tokio::time::sleep(Duration::from_millis(RETRY_DELAY_MS)).await;
+                        continue;
+                    }
+                    
+                    return Err(e);
+                }
+            }
+        }
+        
+        Err(Error::Other("达到最大重试次数".to_string()))
+    }
+    
+    /// 内部聊天请求实现
+    async fn chat_with_tools_internal(&self, messages: &[ChatMessage], tools: Vec<ToolDefinition>) -> Result<ResponseMessage> {
         #[derive(Serialize)]
         struct Request {
             model: String,
             messages: Vec<ChatMessage>,
             #[serde(skip_serializing_if = "Vec::is_empty")]
             tools: Vec<ToolDefinition>,
+            max_tokens: u32,
+            temperature: f32,
         }
         
         let request = Request {
             model: self.config.model.clone(),
             messages: messages.to_vec(),
             tools,
+            max_tokens: self.config.max_tokens,
+            temperature: self.config.temperature,
         };
         
         let url = format!("{}/chat/completions", self.config.endpoint);

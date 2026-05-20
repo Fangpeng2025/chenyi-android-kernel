@@ -6,12 +6,13 @@ use std::sync::Arc;
 use parking_lot::Mutex;
 
 /// 工具执行回调类型
+/// 参数：(tool_name, params_json) -> Result<serde_json::Value>
 pub type ToolCallback = Arc<dyn Fn(&str, &str) -> Result<serde_json::Value> + Send + Sync>;
 
 /// 工具注册表
 pub struct ToolRegistry {
     tools: HashMap<String, Tool>,
-    callback: Option<ToolCallback>,
+    callback: Mutex<Option<ToolCallback>>,
 }
 
 /// 工具定义
@@ -26,7 +27,7 @@ impl ToolRegistry {
     pub fn new() -> Self {
         let mut registry = Self {
             tools: HashMap::new(),
-            callback: None,
+            callback: Mutex::new(None),
         };
         
         // 注册 Android 工具
@@ -38,15 +39,21 @@ impl ToolRegistry {
     }
     
     /// 设置工具执行回调
-    pub fn set_callback(&mut self, callback: ToolCallback) {
-        self.callback = Some(callback);
+    pub fn set_callback(&self, callback: ToolCallback) {
+        let mut guard = self.callback.lock();
+        *guard = Some(callback);
         log::info!("[Tools] 已设置工具执行回调");
+    }
+    
+    /// 检查是否有回调
+    pub fn has_callback(&self) -> bool {
+        self.callback.lock().is_some()
     }
     
     /// 注册 Android 工具
     fn register_android_tools(&mut self) {
         // 截图
-        self.register("screenshot", "截取当前屏幕，返回图片路径", serde_json::json!({
+        self.register("screenshot", "截取当前屏幕，返回图片路径和尺寸", serde_json::json!({
             "type": "object",
             "properties": {}
         }));
@@ -86,7 +93,7 @@ impl ToolRegistry {
         }));
         
         // 输入文本
-        self.register("type_text", "在当前焦点输入文本", serde_json::json!({
+        self.register("type_text", "在当前焦点输入框输入文本", serde_json::json!({
             "type": "object",
             "properties": {
                 "text": {"type": "string", "description": "要输入的文本"}
@@ -95,10 +102,10 @@ impl ToolRegistry {
         }));
         
         // 按键
-        self.register("press_key", "按下系统按键（home, back, recent）", serde_json::json!({
+        self.register("press_key", "按下系统按键", serde_json::json!({
             "type": "object",
             "properties": {
-                "key": {"type": "string", "description": "按键名称：home, back, recent"}
+                "key": {"type": "string", "description": "按键名称：home, back, recent, notifications, quick_settings"}
             },
             "required": ["key"]
         }));
@@ -119,7 +126,7 @@ impl ToolRegistry {
         }));
         
         // 获取当前应用
-        self.register("current_app", "获取当前前台应用信息（包名、活动名）", serde_json::json!({
+        self.register("current_app", "获取当前前台应用信息（包名）", serde_json::json!({
             "type": "object",
             "properties": {}
         }));
@@ -190,17 +197,49 @@ impl ToolRegistry {
             return Err(Error::Tool(format!("未知工具: {}", name)));
         }
         
+        // 验证参数格式
+        let params_value: serde_json::Value = match serde_json::from_str(params) {
+            Ok(v) => v,
+            Err(e) => {
+                log::error!("[Tools] 参数 JSON 解析失败: {}", e);
+                return Err(Error::Tool(format!("参数 JSON 解析失败: {}", e)));
+            }
+        };
+        
+        // 验证必需参数
+        if let Some(tool) = self.tools.get(name) {
+            if let Some(required) = tool.parameters.get("required").and_then(|r| r.as_array()) {
+                if let Some(properties) = params_value.as_object() {
+                    for req_field in required {
+                        if let Some(field_name) = req_field.as_str() {
+                            if !properties.contains_key(field_name) {
+                                log::error!("[Tools] 缺少必需参数: {}", field_name);
+                                return Err(Error::Tool(format!("缺少必需参数: {}", field_name)));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
         // 如果有回调，使用回调执行
-        if let Some(callback) = &self.callback {
+        // 先克隆 Arc，避免在持有锁时调用（防止死锁）
+        let callback_opt = {
+            let guard = self.callback.lock();
+            guard.clone()
+        };
+        
+        if let Some(callback) = callback_opt {
             log::info!("[Tools] 使用回调执行工具");
             return callback(name, params);
         }
         
-        // 没有回调，返回占位符
-        log::warn!("[Tools] 没有设置回调，返回占位符响应");
+        // 没有回调，返回需要 Kotlin 执行的标记
+        log::warn!("[Tools] 没有设置回调，返回待执行标记");
         Ok(serde_json::json!({
             "success": false,
-            "error": "工具执行回调未设置，请先连接无障碍服务",
+            "needs_execution": true,
+            "error": "工具需要在 Kotlin 端执行，请设置回调",
             "tool": name,
             "params": params
         }))

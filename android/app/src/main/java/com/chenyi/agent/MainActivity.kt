@@ -40,6 +40,7 @@ class MainActivity : ComponentActivity() {
     private lateinit var prefs: SharedPreferences
     private lateinit var screenshotManager: ScreenshotManager
     private lateinit var ocrEngine: OcrEngine
+    private lateinit var sessionManager: SessionManager
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -56,6 +57,9 @@ class MainActivity : ComponentActivity() {
         
         // 初始化 OCR 引擎
         ocrEngine = OcrEngine(this)
+        
+        // 初始化会话管理器
+        sessionManager = SessionManager(this)
 
         setContent {
             ChenYiTheme {
@@ -65,6 +69,7 @@ class MainActivity : ComponentActivity() {
                     prefs = prefs,
                     screenshotManager = screenshotManager,
                     ocrEngine = ocrEngine,
+                    sessionManager = sessionManager,
                     onRequestScreenshotPermission = {
                         screenshotManager.requestPermission(this)
                     },
@@ -119,6 +124,7 @@ fun MainScreen(
     prefs: SharedPreferences,
     screenshotManager: ScreenshotManager,
     ocrEngine: OcrEngine,
+    sessionManager: SessionManager,
     onRequestScreenshotPermission: () -> Unit,
     onCheckAccessibility: () -> Boolean
 ) {
@@ -126,8 +132,13 @@ fun MainScreen(
 
     // 加载设置
     var apiEndpoint by remember { mutableStateOf(prefs.getString("api_endpoint", "https://oneapi.xintiandi.online/v1") ?: "") }
-    var apiKey by remember { mutableStateOf(prefs.getString("api_key", "sk-fsy2yLugW1SPt3ZKEfA4B4133f7c42Dd890cD3F582C120C2") ?: "") }
+    var apiKey by remember { mutableStateOf(prefs.getString("api_key", "") ?: "") }
     var modelName by remember { mutableStateOf(prefs.getString("model_name", "glm-5") ?: "glm-5") }
+    
+    // 会话管理
+    var sessions by remember { mutableStateOf(sessionManager.getAllSessions()) }
+    var currentSession by remember { mutableStateOf(sessionManager.getOrCreateCurrentSession()) }
+    var showSessionList by remember { mutableStateOf(false) }
     
     // OCR 初始化状态
     var ocrInitialized by remember { mutableStateOf(false) }
@@ -141,20 +152,29 @@ fun MainScreen(
     }
     
     var inputText by remember { mutableStateOf("") }
-    var messages by remember { mutableStateOf(listOf<Message>()) }
     var isLoading by remember { mutableStateOf(false) }
     var showSettings by remember { mutableStateOf(false) }
     var showTools by remember { mutableStateOf(false) }
     var status by remember { mutableStateOf("内核已就绪") }
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
+    
+    // 权限状态
+    val accessibilityEnabled = remember { mutableStateOf(ChenyiAccessibilityService.getInstance() != null) }
+    val screenshotGranted = remember { mutableStateOf(screenshotManager.isAuthorized()) }
+    
+    // 更新权限状态
+    LaunchedEffect(Unit) {
+        accessibilityEnabled.value = ChenyiAccessibilityService.getInstance() != null
+        screenshotGranted.value = screenshotManager.isAuthorized()
+    }
 
     Scaffold(
         topBar = {
             TopAppBar(
                 title = { 
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("晨翼 Agent", fontWeight = FontWeight.Bold)
+                        Text(currentSession.title, fontWeight = FontWeight.Bold, maxLines = 1)
                         Spacer(modifier = Modifier.width(8.dp))
                         Surface(
                             modifier = Modifier.size(8.dp),
@@ -167,6 +187,30 @@ fun MainScreen(
                     containerColor = MaterialTheme.colorScheme.primaryContainer
                 ),
                 actions = {
+                    // 权限状态指示器
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.padding(end = 8.dp)
+                    ) {
+                        Surface(
+                            modifier = Modifier.size(6.dp),
+                            color = if (accessibilityEnabled.value) Color(0xFF4CAF50) else Color(0xFFF44336),
+                            shape = MaterialTheme.shapes.small
+                        ) {}
+                        Spacer(modifier = Modifier.width(2.dp))
+                        Text("无障碍", style = MaterialTheme.typography.labelSmall)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Surface(
+                            modifier = Modifier.size(6.dp),
+                            color = if (screenshotGranted.value) Color(0xFF4CAF50) else Color(0xFFFFA726),
+                            shape = MaterialTheme.shapes.small
+                        ) {}
+                        Spacer(modifier = Modifier.width(2.dp))
+                        Text("截图", style = MaterialTheme.typography.labelSmall)
+                    }
+                    IconButton(onClick = { showSessionList = true }) {
+                        Icon(Icons.Default.List, contentDescription = "会话列表")
+                    }
                     IconButton(onClick = { showTools = true }) {
                         Icon(Icons.Default.Build, contentDescription = "工具")
                     }
@@ -193,24 +237,33 @@ fun MainScreen(
                         maxLines = 3
                     )
                     Spacer(modifier = Modifier.width(8.dp))
-                    IconButton(
+IconButton(
                         onClick = {
                             if (inputText.isNotBlank() && !isLoading) {
                                 val message = inputText
                                 inputText = ""
-                                messages = messages + Message("user", message, System.currentTimeMillis())
+                                
+                                // 添加用户消息到会话
+                                val userMessage = Message(role = "user", content = message)
+                                currentSession = currentSession.addMessage(userMessage)
+                                sessionManager.saveSession(currentSession)
+                                
                                 isLoading = true
                                 status = "正在思考..."
 
                                 scope.launch {
                                     try {
                                         val result = withContext(Dispatchers.IO) {
-                                            kernel.chat(message)
+                                            // 使用 chatWithTools 自动处理工具调用
+                                            kernel.chatWithTools(message)
                                         }
                                         isLoading = false
                                         if (result.success) {
                                             val response = result.response ?: "无响应"
-                                            messages = messages + Message("assistant", response, System.currentTimeMillis())
+                                            // 添加助手消息到会话
+                                            val assistantMessage = Message(role = "assistant", content = response)
+                                            currentSession = currentSession.addMessage(assistantMessage)
+                                            sessionManager.saveSession(currentSession)
                                             status = "内核已就绪"
                                         } else {
                                             status = "错误: ${result.error}"
@@ -237,7 +290,7 @@ fun MainScreen(
                     }
                 }
             }
-        }
+        },
     ) { padding ->
         Column(
             modifier = Modifier
@@ -284,11 +337,11 @@ fun MainScreen(
                     .padding(horizontal = 8.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                items(messages) { message ->
+                items(currentSession.messages) { message ->
                     MessageCard(message)
                 }
 
-                if (messages.isEmpty() && !isLoading) {
+                if (currentSession.messages.isEmpty() && !isLoading) {
                     item {
                         Card(
                             modifier = Modifier.fillMaxWidth(),
@@ -426,6 +479,144 @@ fun MainScreen(
             }
         )
     }
+    
+    // 会话列表对话框
+    if (showSessionList) {
+        AlertDialog(
+            onDismissRequest = { showSessionList = false },
+            title = { Text("会话列表", fontWeight = FontWeight.Bold) },
+            text = {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(400.dp)
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    // 新建会话按钮
+                    OutlinedButton(
+                        onClick = {
+                            val newSession = sessionManager.createSession()
+                            sessionManager.setCurrentSession(newSession.id)
+                            currentSession = newSession
+                            sessions = sessionManager.getAllSessions()
+                            showSessionList = false
+                            status = "已创建新会话"
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(Icons.Default.Add, contentDescription = null)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("新建会话")
+                    }
+                    
+                    Divider()
+                    
+                    // 会话列表
+                    sessions.forEach { session ->
+                        Card(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 4.dp),
+                            colors = CardDefaults.cardColors(
+                                containerColor = if (session.id == currentSession.id)
+                                    MaterialTheme.colorScheme.primaryContainer
+                                else
+                                    MaterialTheme.colorScheme.surfaceVariant
+                            ),
+                            onClick = {
+                                sessionManager.setCurrentSession(session.id)
+                                currentSession = session
+                                showSessionList = false
+                            }
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(12.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = session.title,
+                                        fontWeight = FontWeight.Bold,
+                                        maxLines = 1
+                                    )
+                                    Text(
+                                        text = "${session.messages.size} 条消息 · ${formatTime(session.updatedAt)}",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                                
+                                // 删除按钮
+                                IconButton(
+                                    onClick = {
+                                        sessionManager.deleteSession(session.id)
+                                        sessions = sessionManager.getAllSessions()
+                                        
+                                        // 如果删除的是当前会话，切换到其他会话
+                                        if (session.id == currentSession.id) {
+                                            val remaining = sessionManager.getAllSessions()
+                                            if (remaining.isNotEmpty()) {
+                                                currentSession = remaining.first()
+                                                sessionManager.setCurrentSession(currentSession.id)
+                                            } else {
+                                                // 没有会话了，创建新的
+                                                val newSession = sessionManager.createSession()
+                                                sessionManager.setCurrentSession(newSession.id)
+                                                currentSession = newSession
+                                            }
+                                        }
+                                        status = "已删除会话"
+                                    }
+                                ) {
+                                    Icon(
+                                        Icons.Default.Delete,
+                                        contentDescription = "删除",
+                                        tint = MaterialTheme.colorScheme.error
+                                    )
+                                }
+                            }
+                        }
+                    }
+                    
+                    if (sessions.isEmpty()) {
+                        Text(
+                            text = "暂无会话",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(16.dp)
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showSessionList = false }) {
+                    Text("关闭")
+                }
+            }
+        )
+    }
+}
+
+/**
+ * 格式化时间
+ */
+fun formatTime(timestamp: Long): String {
+    val now = System.currentTimeMillis()
+    val diff = now - timestamp
+    
+    return when {
+        diff < 60_000 -> "刚刚"
+        diff < 3600_000 -> "${diff / 60_000}分钟前"
+        diff < 86400_000 -> "${diff / 3600_000}小时前"
+        diff < 604800_000 -> "${diff / 86400_000}天前"
+        else -> {
+            val sdf = SimpleDateFormat("MM-dd HH:mm", Locale.getDefault())
+            sdf.format(Date(timestamp))
+        }
+    }
 }
 
 @Composable
@@ -449,24 +640,138 @@ fun MessageCard(message: Message) {
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                Text(
-                    text = if (isUser) "你" else "晨翼",
-                    style = MaterialTheme.typography.labelSmall,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = if (isUser) Icons.Default.Person else Icons.Default.SmartToy,
+                        contentDescription = null,
+                        modifier = Modifier.size(20.dp),
+                        tint = if (isUser)
+                            MaterialTheme.colorScheme.primary
+                        else
+                            MaterialTheme.colorScheme.secondary
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(
+                        text = if (isUser) "用户" else "助手",
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+                
                 Text(
                     text = timeFormat.format(Date(message.timestamp)),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
-            Spacer(modifier = Modifier.height(4.dp))
+            
+            Spacer(modifier = Modifier.height(8.dp))
+            
+            // 消息内容
             SelectionContainer {
                 Text(
                     text = message.content,
-                    style = MaterialTheme.typography.bodyLarge
+                    style = MaterialTheme.typography.bodyLarge,
+                    modifier = Modifier.fillMaxWidth()
                 )
+            }
+            
+            // 工具调用记录
+            if (message.toolCalls.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(8.dp))
+                Divider()
+                Spacer(modifier = Modifier.height(8.dp))
+                
+                Text(
+                    text = "工具执行记录",
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary
+                )
+                
+                message.toolCalls.forEach { toolCall ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 2.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = if (toolCall.success) Icons.Default.Check else Icons.Default.Close,
+                            contentDescription = null,
+                            modifier = Modifier.size(14.dp),
+                            tint = if (toolCall.success) Color(0xFF4CAF50) else MaterialTheme.colorScheme.error
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = toolCall.name,
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold
+                        )
+                        if (toolCall.result != null) {
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = "→ ${toolCall.result.take(20)}",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+            }
+            
+            // 操作按钮
+            Spacer(modifier = Modifier.height(8.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End
+            ) {
+                // 复制按钮
+                IconButton(
+                    onClick = {
+                        // TODO: 复制到剪贴板
+                    },
+                    modifier = Modifier.size(24.dp)
+                ) {
+                    Icon(
+                        Icons.Default.ContentCopy,
+                        contentDescription = "复制",
+                        modifier = Modifier.size(16.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                
+                // 删除按钮
+                IconButton(
+                    onClick = {
+                        // TODO: 删除消息
+                    },
+                    modifier = Modifier.size(24.dp)
+                ) {
+                    Icon(
+                        Icons.Default.DeleteOutline,
+                        contentDescription = "删除",
+                        modifier = Modifier.size(16.dp),
+                        tint = MaterialTheme.colorScheme.error
+                    )
+                }
+                
+                // 重发按钮（仅用户消息）
+                if (isUser) {
+                    IconButton(
+                        onClick = {
+                            // TODO: 重发消息
+                        },
+                        modifier = Modifier.size(24.dp)
+                    ) {
+                        Icon(
+                            Icons.Default.Refresh,
+                            contentDescription = "重发",
+                            modifier = Modifier.size(16.dp),
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                }
             }
         }
     }
@@ -500,11 +805,8 @@ fun ToolItem(name: String, description: String, onClick: () -> Unit) {
     }
 }
 
-data class Message(
-    val role: String,
-    val content: String,
-    val timestamp: Long
-)
+// 使用 Session.kt 中定义的完整 Message 类
+// Message 类已在 Session.kt 中定义，包含 id, role, content, timestamp, toolCalls 字段
 
 @Composable
 fun ChenYiTheme(content: @Composable () -> Unit) {
@@ -515,10 +817,8 @@ fun ChenYiTheme(content: @Composable () -> Unit) {
             secondary = Color(0xFF03DAC6),
             error = Color(0xFFF44336)
         ),
-        typography = Typography(
-            bodyLarge = TextStyle(fontSize = 16.sp),
-            titleMedium = TextStyle(fontSize = 18.sp, fontWeight = FontWeight.Bold)
-        ),
+        typography = ChenYiTypography,
+        shapes = ChenYiShapes,
         content = content
     )
 }

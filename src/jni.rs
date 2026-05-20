@@ -1,7 +1,7 @@
 //! JNI 接口 - Android 平台支持
 
 use jni::JNIEnv;
-use jni::objects::{JClass, JString};
+use jni::objects::{JClass, JString, JObject};
 use jni::sys::{jboolean, jstring};
 use parking_lot::Mutex;
 use std::sync::OnceLock;
@@ -38,6 +38,16 @@ pub extern "system" fn Java_com_chenyi_agent_Kernel_nativeInit(
 
     log::info!("[JNI] 初始化内核，数据目录: {}", data_dir);
 
+    // 初始化 Android 日志
+    #[cfg(target_os = "android")]
+    {
+        let _ = android_logger::init_once(
+            android_logger::Config::default()
+                .with_max_level(log::LevelFilter::Debug)
+                .with_tag("ChenyiKernel"),
+        );
+    }
+
     // 创建配置
     let config = KernelConfig {
         data_dir: std::path::PathBuf::from(data_dir),
@@ -58,6 +68,19 @@ pub extern "system" fn Java_com_chenyi_agent_Kernel_nativeInit(
             false as jboolean
         }
     }
+}
+
+/// 注册工具执行回调（已弃用）
+/// 当前架构下，工具执行由 Kotlin 端的 chatWithTools 自动处理
+#[deprecated(note = "当前架构下未使用，工具执行由 Kotlin 端处理")]
+#[no_mangle]
+pub extern "system" fn Java_com_chenyi_agent_Kernel_nativeRegisterToolCallback(
+    _env: JNIEnv,
+    _class: JClass,
+    _callback_obj: JObject,
+) -> jboolean {
+    log::warn!("[JNI] nativeRegisterToolCallback 已弃用（当前架构下未使用）");
+    true as jboolean
 }
 
 /// 发送消息
@@ -88,7 +111,7 @@ pub extern "system" fn Java_com_chenyi_agent_Kernel_nativeChat(
     // 使用全局 tokio runtime 执行异步
     let rt = get_runtime();
     
-    // 先获取内核的 Arc 克隆，然后释放锁
+    // 获取内核的 Arc 克隆
     let kernel = {
         let guard = cell.lock();
         match guard.as_ref() {
@@ -99,7 +122,8 @@ pub extern "system" fn Java_com_chenyi_agent_Kernel_nativeChat(
             }
         }
     };
-    // 锁已释放，安全执行异步
+    
+    // 执行 chat
     let result = rt.block_on(kernel.chat(&message));
 
     log::info!("[JNI] chat 执行完成");
@@ -140,15 +164,28 @@ pub extern "system" fn Java_com_chenyi_agent_Kernel_nativeExecuteTool(
 
     log::info!("[JNI] 执行工具: {} 参数: {}", tool, params);
     
-    // 直接返回工具调用请求，由 Kotlin 端执行
-    // 这样避免了复杂的 JNI 回调
-    let json = serde_json::json!({
-        "success": true,
-        "tool": tool,
-        "params": params,
-        "message": "工具调用请求，请由 Kotlin 端执行"
-    });
-    json_to_jstring(&mut env, &json)
+    // 获取内核
+    let cell = match KERNEL.get() {
+        Some(c) => c,
+        None => return error_response(&mut env, "内核未初始化"),
+    };
+    
+    let guard = cell.lock();
+    match guard.as_ref() {
+        Some(kernel) => {
+            match kernel.execute_tool(&tool, &params) {
+                Ok(result) => {
+                    let json = serde_json::json!({
+                        "success": true,
+                        "data": result
+                    });
+                    json_to_jstring(&mut env, &json)
+                }
+                Err(e) => error_response(&mut env, &e.to_string())
+            }
+        }
+        None => error_response(&mut env, "内核未初始化")
+    }
 }
 
 /// 获取内核状态
@@ -184,6 +221,93 @@ pub extern "system" fn Java_com_chenyi_agent_Kernel_nativeGetStatus(
     }
 }
 
+/// 清除会话历史
+#[no_mangle]
+pub extern "system" fn Java_com_chenyi_agent_Kernel_nativeClearHistory(
+    mut _env: JNIEnv,
+    _class: JClass,
+) -> jboolean {
+    let cell = match KERNEL.get() {
+        Some(c) => c,
+        None => return false as jboolean,
+    };
+    
+    let guard = cell.lock();
+    if let Some(kernel) = guard.as_ref() {
+        kernel.clear_history();
+        log::info!("[JNI] 会话历史已清除");
+        true as jboolean
+    } else {
+        false as jboolean
+    }
+}
+
+/// 提交工具执行结果，继续对话
+#[no_mangle]
+pub extern "system" fn Java_com_chenyi_agent_Kernel_nativeSubmitToolResults(
+    mut env: JNIEnv,
+    _class: JClass,
+    tool_results_json: JString,
+) -> jstring {
+    let json_str: String = match env.get_string(&tool_results_json) {
+        Ok(s) => s.into(),
+        Err(_) => return error_response(&mut env, "获取工具结果失败"),
+    };
+
+    log::info!("[JNI] 提交工具结果: {} 字节", json_str.len());
+
+    // 解析工具结果 JSON
+    // 格式: [{"tool_call_id": "xxx", "result": "..."}, ...]
+    let tool_results: Vec<(String, String)> = match serde_json::from_str(&json_str) {
+        Ok(arr) => {
+            let arr: Vec<serde_json::Value> = arr;
+            arr.iter().filter_map(|v| {
+                let id = v.get("tool_call_id")?.as_str()?.to_string();
+                let result = v.get("result")?.as_str()?.to_string();
+                Some((id, result))
+            }).collect()
+        }
+        Err(e) => {
+            log::error!("[JNI] 解析工具结果失败: {}", e);
+            return error_response(&mut env, &format!("解析工具结果失败: {}", e));
+        }
+    };
+
+    // 获取内核
+    let cell = match KERNEL.get() {
+        Some(c) => c,
+        None => return error_response(&mut env, "内核未初始化"),
+    };
+
+    // 获取内核克隆
+    let kernel = {
+        let guard = cell.lock();
+        match guard.as_ref() {
+            Some(k) => k.clone(),
+            None => return error_response(&mut env, "内核未初始化"),
+        }
+    };
+
+    // 执行继续对话
+    let rt = get_runtime();
+    let result = rt.block_on(kernel.continue_with_tool_results(tool_results));
+
+    match result {
+        Ok(response) => {
+            log::info!("[JNI] 继续对话成功: {} 字节", response.len());
+            let json = serde_json::json!({
+                "success": true,
+                "response": response
+            });
+            json_to_jstring(&mut env, &json)
+        }
+        Err(e) => {
+            log::error!("[JNI] 继续对话失败: {}", e);
+            error_response(&mut env, &e.to_string())
+        }
+    }
+}
+
 /// 销毁内核
 #[no_mangle]
 pub extern "system" fn Java_com_chenyi_agent_Kernel_nativeDestroy(_env: JNIEnv, _class: JClass) {
@@ -195,56 +319,6 @@ pub extern "system" fn Java_com_chenyi_agent_Kernel_nativeDestroy(_env: JNIEnv, 
     }
 
     log::info!("[JNI] 内核已销毁");
-}
-
-/// 注册工具执行回调（从 Kotlin 端）
-#[no_mangle]
-pub extern "system" fn Java_com_chenyi_agent_Kernel_nativeRegisterToolCallback(
-    mut env: JNIEnv,
-    _class: JClass,
-    callback_obj: jni::objects::JObject,
-) -> jboolean {
-    log::info!("[JNI] 注册工具回调");
-    
-    // 获取内核
-    let cell = match KERNEL.get() {
-        Some(c) => c,
-        None => {
-            log::error!("[JNI] 内核未初始化");
-            return false as jboolean;
-        }
-    };
-    
-    let mut guard = cell.lock();
-    match guard.as_mut() {
-        Some(kernel) => {
-            // 创建回调闭包
-            // 注意：这里需要通过 JNI 调用 Kotlin 的方法
-            // 由于 JNI 的复杂性，我们暂时不实现真正的回调
-            // 而是让 Rust 直接返回占位符，由 Kotlin 端处理
-            
-            log::info!("[JNI] 工具回调已注册（占位符模式）");
-            true as jboolean
-        }
-        None => {
-            log::error!("[JNI] 内核未初始化");
-            false as jboolean
-        }
-    }
-}
-
-// ============ 辅助函数 ============
-
-fn json_to_jstring(env: &mut JNIEnv, json: &serde_json::Value) -> jstring {
-    let s = serde_json::to_string(json).unwrap_or_else(|_| "{}".to_string());
-    match env.new_string(&s) {
-        Ok(jstr) => jstr.into_raw(),
-        Err(e) => {
-            log::error!("[JNI] 创建字符串失败: {:?}", e);
-            // 返回空 JSON 对象
-            env.new_string("{}").unwrap().into_raw()
-        }
-    }
 }
 
 /// 更新内核配置
@@ -279,18 +353,45 @@ pub extern "system" fn Java_com_chenyi_agent_Kernel_nativeUpdateConfig(
             match serde_json::from_str::<serde_json::Value>(&config_str) {
                 Ok(config) => {
                     // 更新 LLM 配置
+                    let mut needs_reinit = false;
+                    
                     if let Some(endpoint) = config.get("endpoint").and_then(|v| v.as_str()) {
                         kernel.llm.config.endpoint = endpoint.to_string();
                         log::info!("[JNI] 更新 endpoint: {}", endpoint);
+                        needs_reinit = true;
                     }
                     if let Some(api_key) = config.get("api_key").and_then(|v| v.as_str()) {
                         kernel.llm.config.api_key = api_key.to_string();
-                        log::info!("[JNI] 更新 api_key: {}***", &api_key[..10.min(api_key.len())]);
+                        let preview: String = api_key.chars().take(10).collect();
+                        log::info!("[JNI] 更新 api_key: {}***", preview);
+                        needs_reinit = true;
                     }
                     if let Some(model) = config.get("model").and_then(|v| v.as_str()) {
                         kernel.llm.config.model = model.to_string();
                         log::info!("[JNI] 更新 model: {}", model);
                     }
+                    if let Some(max_tokens) = config.get("max_tokens").and_then(|v| v.as_u64()) {
+                        kernel.llm.config.max_tokens = max_tokens as u32;
+                    }
+                    if let Some(temperature) = config.get("temperature").and_then(|v| v.as_f64()) {
+                        kernel.llm.config.temperature = temperature as f32;
+                    }
+                    
+                    // 重新初始化 LLM 客户端
+                    if needs_reinit {
+                        log::info!("[JNI] 重新初始化 LLM 客户端");
+                        match crate::llm::LlmClient::new(kernel.llm.config.clone()) {
+                            Ok(new_client) => {
+                                kernel.llm = std::sync::Arc::new(new_client);
+                                log::info!("[JNI] LLM 客户端重新初始化成功");
+                            }
+                            Err(e) => {
+                                log::error!("[JNI] LLM 客户端重新初始化失败: {}", e);
+                                return false as jboolean;
+                            }
+                        }
+                    }
+                    
                     true as jboolean
                 }
                 Err(e) => {
@@ -302,6 +403,19 @@ pub extern "system" fn Java_com_chenyi_agent_Kernel_nativeUpdateConfig(
         None => {
             log::error!("[JNI] 内核未初始化");
             false as jboolean
+        }
+    }
+}
+
+// ============ 辅助函数 ============
+
+fn json_to_jstring(env: &mut JNIEnv, json: &serde_json::Value) -> jstring {
+    let s = serde_json::to_string(json).unwrap_or_else(|_| "{}".to_string());
+    match env.new_string(&s) {
+        Ok(jstr) => jstr.into_raw(),
+        Err(e) => {
+            log::error!("[JNI] 创建字符串失败: {:?}", e);
+            env.new_string("{}").unwrap().into_raw()
         }
     }
 }

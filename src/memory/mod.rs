@@ -83,12 +83,26 @@ impl MemoryEngine {
         // 添加到内存
         self.entries.push(entry);
         
-        // 限制条目数量
+        // 限制条目数量（使用事务确保一致性）
         if self.entries.len() > self.config.max_entries {
-            let removed = self.entries.remove(0);
-            // 从数据库删除最旧的记录
+            let remove_count = self.entries.len() - self.config.max_entries;
+            let removed_ids: Vec<String> = self.entries.iter()
+                .take(remove_count)
+                .map(|e| e.id.clone())
+                .collect();
+            
+            // 从内存移除
+            self.entries.drain(0..remove_count);
+            
+            // 从数据库批量删除
             let conn = self.storage.conn();
-            conn.execute("DELETE FROM memory WHERE id = ?1", [&removed.id])?;
+            for id in removed_ids {
+                if let Err(e) = conn.execute("DELETE FROM memory WHERE id = ?1", [&id]) {
+                    log::warn!("[Memory] 删除旧记录失败 {}: {}", id, e);
+                }
+            }
+            
+            log::debug!("[Memory] 清理了 {} 条旧记录", remove_count);
         }
         
         log::debug!("[Memory] 添加消息: {} (总数: {})", role, self.entries.len());
@@ -96,11 +110,28 @@ impl MemoryEngine {
         Ok(())
     }
     
-    /// 获取上下文
-    pub fn get_context(&self, _query: &str) -> Result<String> {
-        // 简单实现：返回最近的对话
-        let recent: Vec<_> = self.entries.iter().rev().take(10).collect();
-        let context = recent.iter().rev()
+    /// 获取上下文（返回最近 N 条对话，按时间排序）
+    /// 
+    /// # Arguments
+    /// * `query` - 查询字符串（当前未使用，保留用于未来语义搜索）
+    /// 
+    /// # Note
+    /// 当前实现返回最近的对话记录。未来可以实现基于 embedding 的语义搜索。
+    #[allow(unused_variables)]
+    pub fn get_context(&self, query: &str) -> Result<String> {
+        // 简单实现：返回最近的对话记录
+        // TODO: 未来可以实现基于 embedding 的语义搜索
+        
+        let recent_count = 10.min(self.entries.len());
+        if recent_count == 0 {
+            return Ok(String::new());
+        }
+        
+        // 获取最近的记录（entries 已按时间排序）
+        let start = self.entries.len().saturating_sub(recent_count);
+        let recent: Vec<_> = self.entries.iter().skip(start).collect();
+        
+        let context = recent.iter()
             .map(|e| format!("{}: {}", e.role, e.content))
             .collect::<Vec<_>>()
             .join("\n");
@@ -111,5 +142,15 @@ impl MemoryEngine {
     /// 获取条目数量
     pub fn count(&self) -> usize {
         self.entries.len()
+    }
+    
+    /// 清除所有记忆（用于测试）
+    #[allow(dead_code)]
+    pub fn clear(&mut self) -> Result<()> {
+        let conn = self.storage.conn();
+        conn.execute("DELETE FROM memory", [])?;
+        self.entries.clear();
+        log::info!("[Memory] 已清除所有记忆");
+        Ok(())
     }
 }

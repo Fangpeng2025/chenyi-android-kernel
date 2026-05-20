@@ -39,22 +39,40 @@ class ScreenshotManager(private val context: Context) {
     var screenWidth = 0
     var screenHeight = 0
     private var screenDensity = 0
+    private var initialized = false
+    private var permissionGranted = false
 
     /**
      * 初始化
      */
     fun init() {
-        mediaProjectionManager = context.getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
-        windowManager = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
-        
-        val metrics = DisplayMetrics()
-        windowManager?.defaultDisplay?.getRealMetrics(metrics)
-        screenWidth = metrics.widthPixels
-        screenHeight = metrics.heightPixels
-        screenDensity = metrics.densityDpi
-        
-        Log.d(TAG, "屏幕尺寸: ${screenWidth}x${screenHeight}, 密度: $screenDensity")
+        try {
+            mediaProjectionManager = context.getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
+            windowManager = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
+            
+            val metrics = DisplayMetrics()
+            windowManager?.defaultDisplay?.getRealMetrics(metrics)
+            screenWidth = metrics.widthPixels
+            screenHeight = metrics.heightPixels
+            screenDensity = metrics.densityDpi
+            
+            initialized = true
+            Log.d(TAG, "屏幕尺寸: ${screenWidth}x${screenHeight}, 密度: $screenDensity")
+        } catch (e: Exception) {
+            Log.e(TAG, "初始化失败", e)
+            initialized = false
+        }
     }
+    
+    /**
+     * 检查是否已初始化
+     */
+    fun isInitialized(): Boolean = initialized
+    
+    /**
+     * 检查是否有截图权限
+     */
+    fun hasPermission(): Boolean = permissionGranted && mediaProjection != null
 
     /**
      * 请求截图权限
@@ -72,15 +90,18 @@ class ScreenshotManager(private val context: Context) {
     fun handlePermissionResult(resultCode: Int, data: Intent): Boolean {
         if (resultCode != Activity.RESULT_OK) {
             Log.e(TAG, "用户拒绝截图权限")
+            permissionGranted = false
             return false
         }
 
         mediaProjection = mediaProjectionManager?.getMediaProjection(resultCode, data)
         if (mediaProjection == null) {
             Log.e(TAG, "MediaProjection 创建失败")
+            permissionGranted = false
             return false
         }
 
+        permissionGranted = true
         Log.d(TAG, "MediaProjection 创建成功")
         return true
     }
