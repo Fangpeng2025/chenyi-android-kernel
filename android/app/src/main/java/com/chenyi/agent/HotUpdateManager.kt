@@ -288,14 +288,15 @@ class HotUpdateManager(private val context: Context) {
                 if (apkFile.exists()) apkFile.delete()
                 
                 val connection = URL(apkUrl).openConnection() as HttpURLConnection
-                connection.connectTimeout = 15000
-                connection.readTimeout = 60000 // APK 较大，设置更长超时
+                connection.connectTimeout = 30000  // 连接超时 30 秒
+                connection.readTimeout = 300000    // 读取超时 5 分钟（APK 较大）
                 
                 val fileSize = connection.contentLength
-                Log.d(TAG, "APK 大小: $fileSize bytes")
+                Log.d(TAG, "APK 大小: $fileSize bytes (${fileSize / 1024 / 1024} MB)")
                 
                 var downloaded = 0
                 val buffer = ByteArray(8192)
+                var lastProgress = 0
                 
                 connection.inputStream.use { input ->
                     FileOutputStream(apkFile).use { output ->
@@ -306,15 +307,20 @@ class HotUpdateManager(private val context: Context) {
                             
                             if (fileSize > 0) {
                                 val progress = (downloaded * 100 / fileSize)
-                                Handler(Looper.getMainLooper()).post {
-                                    progressCallback(progress)
+                                // 每下载 1% 才更新进度，避免频繁回调
+                                if (progress != lastProgress) {
+                                    lastProgress = progress
+                                    Log.d(TAG, "下载进度: $progress% ($downloaded / $fileSize)")
+                                    Handler(Looper.getMainLooper()).post {
+                                        progressCallback(progress)
+                                    }
                                 }
                             }
                         }
                     }
                 }
                 
-                Log.d(TAG, "APK 下载完成: ${apkFile.absolutePath}")
+                Log.d(TAG, "APK 下载完成: ${apkFile.absolutePath}, 大小: ${apkFile.length()} bytes")
                 Handler(Looper.getMainLooper()).post {
                     completeCallback(true, apkFile)
                 }
