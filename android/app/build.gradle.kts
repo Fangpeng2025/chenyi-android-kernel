@@ -26,15 +26,35 @@ android {
         }
     }
     
+    // 签名配置
+    signingConfigs {
+        getByName("debug") {
+            // 使用默认 debug keystore
+        }
+        create("release") {
+            // 使用 debug keystore 签名（临时方案）
+            // TODO: 后续使用正式的 release keystore
+            storeFile = file("debug.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
+    }
+    
     // 移除 CMake 配置，使用 Rust 编译
 
     buildTypes {
+        debug {
+            signingConfig = signingConfigs.getByName("debug")
+        }
         release {
             isMinifyEnabled = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            // 使用 debug 签名（临时方案，方便测试）
+            signingConfig = signingConfigs.getByName("debug")
         }
     }
 
