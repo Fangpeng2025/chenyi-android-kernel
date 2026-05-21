@@ -1,7 +1,9 @@
 package com.chenyi.agent
 
 import android.content.Context
+import android.content.Intent
 import android.content.SharedPreferences
+import android.os.Build
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.ComponentActivity
@@ -36,6 +38,15 @@ import java.text.SimpleDateFormat
 import java.util.*
 
 /**
+ * 截图辅助接口 - 统一处理 Android 14+ 和旧版本的差异
+ */
+interface ScreenshotHelper {
+    fun isAuthorized(): Boolean
+    fun requestPermission(activity: ComponentActivity)
+    fun capture(): android.graphics.Bitmap?
+}
+
+/**
  * 微信风格主界面
  */
 class MainActivity : ComponentActivity() {
@@ -57,6 +68,11 @@ class MainActivity : ComponentActivity() {
         ocrEngine = OcrEngine(this)
         sessionManager = SessionManager(this)
 
+        // 启动截图前台服务（Android 14+ 需要）
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            startForegroundService(Intent(this, ScreenshotService::class.java))
+        }
+
         setContent {
             MaterialTheme {
                 WeChatStyleApp(
@@ -74,8 +90,19 @@ class MainActivity : ComponentActivity() {
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: android.content.Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
         if (requestCode == ScreenshotManager.REQUEST_MEDIA_PROJECTION && data != null) {
-            val success = screenshotManager.handlePermissionResult(resultCode, data)
-            Toast.makeText(this, if (success) "截图权限已授权" else "截图权限被拒绝", Toast.LENGTH_SHORT).show()
+            // Android 14+ 使用 ScreenshotService
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                val service = ScreenshotService.instance
+                if (service != null) {
+                    val success = service.setMediaProjection(resultCode, data)
+                    Toast.makeText(this, if (success) "截图权限已授权" else "截图权限被拒绝", Toast.LENGTH_SHORT).show()
+                } else {
+                    Toast.makeText(this, "截图服务未启动", Toast.LENGTH_SHORT).show()
+                }
+            } else {
+                val success = screenshotManager.handlePermissionResult(resultCode, data)
+                Toast.makeText(this, if (success) "截图权限已授权" else "截图权限被拒绝", Toast.LENGTH_SHORT).show()
+            }
         }
     }
 
@@ -83,6 +110,11 @@ class MainActivity : ComponentActivity() {
         super.onDestroy()
         if (::kernel.isInitialized) kernel.destroy()
         if (::screenshotManager.isInitialized) screenshotManager.destroy()
+        
+        // 停止截图服务
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            stopService(Intent(this, ScreenshotService::class.java))
+        }
     }
 }
 
@@ -101,6 +133,31 @@ fun WeChatStyleApp(
     var selectedTab by remember { mutableStateOf(0) }
     val context = LocalContext.current
 
+    // 截图辅助对象 - 根据 Android 版本选择使用 ScreenshotService 或 ScreenshotManager
+    val screenshotHelper = remember {
+        object : ScreenshotHelper {
+            override fun isAuthorized(): Boolean {
+                return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                    ScreenshotService.instance?.hasProjection() ?: false
+                } else {
+                    screenshotManager.isAuthorized()
+                }
+            }
+
+            override fun requestPermission(activity: ComponentActivity) {
+                screenshotManager.requestPermission(activity)
+            }
+
+            override fun capture(): android.graphics.Bitmap? {
+                return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                    ScreenshotService.instance?.capture()
+                } else {
+                    screenshotManager.capture()
+                }
+            }
+        }
+    }
+
     Scaffold(
         containerColor = Color(0xFFEDEDED),
         bottomBar = {
@@ -113,9 +170,9 @@ fun WeChatStyleApp(
         Box(modifier = Modifier.padding(padding)) {
             when (selectedTab) {
                 0 -> ChatScreen(kernel, prefs, sessionManager, kernelInitialized)
-                1 -> ToolsScreen(screenshotManager, ocrEngine, kernel)
-                2 -> SettingsScreen(prefs, kernel, screenshotManager)
-                3 -> ProfileScreen(kernelInitialized, screenshotManager)
+                1 -> ToolsScreen(screenshotManager, ocrEngine, kernel, screenshotHelper)
+                2 -> SettingsScreen(prefs, kernel, screenshotManager, screenshotHelper)
+                3 -> ProfileScreen(kernelInitialized, screenshotManager, screenshotHelper)
             }
         }
     }
@@ -315,13 +372,26 @@ fun ChatScreen(
                             scope.launch {
                                 try {
                                     val response = withContext(Dispatchers.IO) {
-                                        kernel.chat(message)
+                                        // 使用 chatWithTools 自动处理工具调用
+                                        kernel.chatWithTools(message)
                                     }
-                                    val assistantMessage = Message(role = "assistant", content = response.response ?: response.error ?: "无响应")
+                                    // 更清晰的错误显示
+                                    val content = when {
+                                        response.response != null && response.response.isNotBlank() -> response.response
+                                        response.error != null && response.error.isNotBlank() -> "❌ 错误: ${response.error}"
+                                        else -> "⚠️ 无响应"
+                                    }
+                                    val assistantMessage = Message(role = "assistant", content = content)
                                     currentSession = currentSession.addMessage(assistantMessage)
                                     sessionManager.saveSession(currentSession)
                                 } catch (e: Exception) {
-                                    Toast.makeText(context, "发送失败: ${e.message}", Toast.LENGTH_SHORT).show()
+                                    // 显示详细错误信息
+                                    val errorMsg = "发送失败: ${e.message}\n类型: ${e.javaClass.simpleName}"
+                                    Toast.makeText(context, errorMsg, Toast.LENGTH_LONG).show()
+                                    // 也在消息中显示错误
+                                    val errorMessage = Message(role = "assistant", content = "❌ 发送失败: ${e.message}")
+                                    currentSession = currentSession.addMessage(errorMessage)
+                                    sessionManager.saveSession(currentSession)
                                 } finally {
                                     isLoading = false
                                 }
@@ -419,9 +489,11 @@ fun WeChatMessageBubble(message: Message) {
 fun ToolsScreen(
     screenshotManager: ScreenshotManager,
     ocrEngine: OcrEngine,
-    kernel: Kernel
+    kernel: Kernel,
+    screenshotHelper: ScreenshotHelper
 ) {
     val context = LocalContext.current
+    val activity = context as? ComponentActivity
     val scope = rememberCoroutineScope()
 
     Column(
@@ -454,15 +526,19 @@ fun ToolsScreen(
                 WeChatToolItem(
                     icon = Icons.Default.Screenshot,
                     title = "截图",
-                    subtitle = if (screenshotManager.isAuthorized()) "已授权 - 点击截图" else "未授权 - 点击授权",
+                    subtitle = if (screenshotHelper.isAuthorized()) "已授权 - 点击截图" else "未授权 - 点击授权",
                     onClick = {
-                        if (!screenshotManager.isAuthorized()) {
-                            Toast.makeText(context, "请授权截图权限", Toast.LENGTH_SHORT).show()
-                            screenshotManager.requestPermission(context as ComponentActivity)
+                        if (!screenshotHelper.isAuthorized()) {
+                            if (activity != null) {
+                                Toast.makeText(context, "请授权截图权限", Toast.LENGTH_SHORT).show()
+                                screenshotHelper.requestPermission(activity)
+                            } else {
+                                Toast.makeText(context, "无法获取Activity，请从主界面操作", Toast.LENGTH_SHORT).show()
+                            }
                         } else {
                             scope.launch {
                                 try {
-                                    val bitmap = screenshotManager.capture()
+                                    val bitmap = screenshotHelper.capture()
                                     if (bitmap != null) {
                                         Toast.makeText(context, "截图成功", Toast.LENGTH_SHORT).show()
                                     } else {
@@ -482,9 +558,32 @@ fun ToolsScreen(
                 WeChatToolItem(
                     icon = Icons.Default.DocumentScanner,
                     title = "OCR 识别",
-                    subtitle = "识别图片中的文字",
+                    subtitle = if (ocrEngine.isInitialized()) "已就绪 - 点击识别" else "初始化中...",
                     onClick = {
-                        Toast.makeText(context, "请先截图", Toast.LENGTH_SHORT).show()
+                        if (!ocrEngine.isInitialized()) {
+                            Toast.makeText(context, "OCR 正在初始化，请稍后再试", Toast.LENGTH_SHORT).show()
+                        } else if (!screenshotHelper.isAuthorized()) {
+                            Toast.makeText(context, "请先授权截图权限", Toast.LENGTH_SHORT).show()
+                        } else {
+                            scope.launch {
+                                try {
+                                    val bitmap = screenshotHelper.capture()
+                                    if (bitmap != null) {
+                                        val result = ocrEngine.recognize(bitmap)
+                                        bitmap.recycle()
+                                        if (result.success) {
+                                            Toast.makeText(context, "识别成功: ${result.fullText.take(50)}...", Toast.LENGTH_LONG).show()
+                                        } else {
+                                            Toast.makeText(context, "识别失败: ${result.error}", Toast.LENGTH_SHORT).show()
+                                        }
+                                    } else {
+                                        Toast.makeText(context, "截图失败", Toast.LENGTH_SHORT).show()
+                                    }
+                                } catch (e: Exception) {
+                                    Toast.makeText(context, "OCR 失败: ${e.message}", Toast.LENGTH_SHORT).show()
+                                }
+                            }
+                        }
                     }
                 )
             }
@@ -552,9 +651,11 @@ fun WeChatToolItem(
 fun SettingsScreen(
     prefs: SharedPreferences,
     kernel: Kernel,
-    screenshotManager: ScreenshotManager
+    screenshotManager: ScreenshotManager,
+    screenshotHelper: ScreenshotHelper
 ) {
     val context = LocalContext.current
+    val activity = context as? ComponentActivity
 
     // 配置
     var apiKey by remember { mutableStateOf(prefs.getString("api_key", "") ?: "") }
@@ -564,6 +665,12 @@ fun SettingsScreen(
     var showApiKeyEditor by remember { mutableStateOf(false) }
     var showEndpointEditor by remember { mutableStateOf(false) }
     var showModelEditor by remember { mutableStateOf(false) }
+    
+    // 热更新状态
+    var showUpdateDialog by remember { mutableStateOf(false) }
+    var updateMessage by remember { mutableStateOf("") }
+    var isUpdating by remember { mutableStateOf(false) }
+    val hotUpdateManager = remember { HotUpdateManager(context) }
     
     var tempApiKey by remember { mutableStateOf(apiKey) }
     var tempEndpoint by remember { mutableStateOf(apiEndpoint) }
@@ -645,10 +752,14 @@ fun SettingsScreen(
                 HorizontalDivider(color = Color(0xFFE5E5E5), thickness = 0.5.dp)
                 WeChatSettingItem(
                     title = "截图权限",
-                    subtitle = if (screenshotManager.isAuthorized()) "已授权" else "未授权 - 点击授权",
+                    subtitle = if (screenshotHelper.isAuthorized()) "已授权" else "未授权 - 点击授权",
                     onClick = {
-                        Toast.makeText(context, "请授权截图权限", Toast.LENGTH_SHORT).show()
-                        screenshotManager.requestPermission(context as ComponentActivity)
+                        if (activity != null) {
+                            Toast.makeText(context, "请授权截图权限", Toast.LENGTH_SHORT).show()
+                            screenshotHelper.requestPermission(activity)
+                        } else {
+                            Toast.makeText(context, "无法获取Activity，请从主界面操作", Toast.LENGTH_SHORT).show()
+                        }
                     }
                 )
             }
@@ -666,12 +777,11 @@ fun SettingsScreen(
                     title = "检查更新",
                     subtitle = "检查并下载最新内核",
                     onClick = {
-                        val hotUpdateManager = HotUpdateManager(context)
                         Toast.makeText(context, "正在检查更新...", Toast.LENGTH_SHORT).show()
                         hotUpdateManager.checkUpdate { hasUpdate, message ->
                             if (hasUpdate) {
-                                Toast.makeText(context, message, Toast.LENGTH_LONG).show()
-                                // TODO: 显示更新对话框
+                                updateMessage = message
+                                showUpdateDialog = true
                             } else {
                                 Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
                             }
@@ -680,6 +790,50 @@ fun SettingsScreen(
                 )
             }
         }
+    }
+
+    // 更新确认对话框
+    if (showUpdateDialog) {
+        AlertDialog(
+            onDismissRequest = { if (!isUpdating) showUpdateDialog = false },
+            title = { Text("发现新版本") },
+            text = { 
+                Column {
+                    Text(updateMessage)
+                    if (isUpdating) {
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            CircularProgressIndicator(modifier = Modifier.size(20.dp))
+                            Text("正在下载更新...")
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                if (!isUpdating) {
+                    TextButton(onClick = {
+                        isUpdating = true
+                        hotUpdateManager.downloadAndUpdate { success, msg ->
+                            isUpdating = false
+                            showUpdateDialog = false
+                            Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
+                        }
+                    }) {
+                        Text("下载并安装")
+                    }
+                }
+            },
+            dismissButton = {
+                if (!isUpdating) {
+                    TextButton(onClick = { showUpdateDialog = false }) {
+                        Text("稍后再说")
+                    }
+                }
+            }
+        )
     }
 
     // API Key 编辑对话框
@@ -785,7 +939,7 @@ fun SettingsScreen(
                     value = tempModel,
                     onValueChange = { tempModel = it },
                     label = { Text("模型") },
-                    placeholder = { Text("glm-5") },
+                    placeholder = { Text("glm-4-flash") },
                     modifier = Modifier.fillMaxWidth()
                 )
             },
@@ -856,9 +1010,11 @@ fun WeChatSettingItem(
 @Composable
 fun ProfileScreen(
     kernelInitialized: Boolean,
-    screenshotManager: ScreenshotManager
+    screenshotManager: ScreenshotManager,
+    screenshotHelper: ScreenshotHelper
 ) {
     val context = LocalContext.current
+    val activity = context as? ComponentActivity
 
     Column(
         modifier = Modifier
@@ -927,10 +1083,14 @@ fun ProfileScreen(
                 HorizontalDivider(color = Color(0xFFE5E5E5), thickness = 0.5.dp)
                 WeChatSettingItem(
                     title = "截图权限",
-                    subtitle = if (screenshotManager.isAuthorized()) "已授权" else "未授权",
+                    subtitle = if (screenshotHelper.isAuthorized()) "已授权" else "未授权",
                     onClick = {
-                        Toast.makeText(context, "请授权截图权限", Toast.LENGTH_SHORT).show()
-                        screenshotManager.requestPermission(context as ComponentActivity)
+                        if (activity != null) {
+                            Toast.makeText(context, "请授权截图权限", Toast.LENGTH_SHORT).show()
+                            screenshotHelper.requestPermission(activity)
+                        } else {
+                            Toast.makeText(context, "无法获取Activity，请从主界面操作", Toast.LENGTH_SHORT).show()
+                        }
                     }
                 )
             }

@@ -154,9 +154,14 @@ class HotUpdateManager(private val context: Context) {
      * 获取远程版本
      */
     private fun getRemoteVersion(): String {
-        // TODO: 从服务器获取版本号
-        // 这里可以访问 API 或读取版本文件
-        return System.currentTimeMillis().toString()
+        return try {
+            val url = URL("https://github.com/Fangpeng2025/chenyi-android-kernel/releases/latest/download/version.txt")
+            url.openStream().use { it.bufferedReader().readText().trim() }
+        } catch (e: Exception) {
+            Log.e(TAG, "获取远程版本失败: ${e.message}")
+            // 返回当前版本，表示无更新
+            getCurrentVersion()
+        }
     }
     
     /**

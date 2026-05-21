@@ -14,9 +14,14 @@ class Kernel(private val context: Context) {
         
         init {
             // 尝试加载热更新的库
-            val hotUpdateManager = HotUpdateManager(android.app.Application())
-            if (!hotUpdateManager.loadUpdatedLibrary()) {
-                // 如果没有热更新的库，加载默认库
+            try {
+                val hotUpdateManager = HotUpdateManager(android.app.Application())
+                if (!hotUpdateManager.loadUpdatedLibrary()) {
+                    // 如果没有热更新的库，加载默认库
+                    System.loadLibrary("chenyi")
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "加载热更新库失败，使用默认库", e)
                 System.loadLibrary("chenyi")
             }
         }
