@@ -264,6 +264,9 @@ fun ChatScreen(
     var isLoading by remember { mutableStateOf(false) }
     val listState = rememberLazyListState()
     
+    // 待发送的消息（用于触发 LaunchedEffect）
+    var pendingMessage by remember { mutableStateOf<String?>(null) }
+    
     // API Key 未设置提示 - 只在首次进入聊天页面时显示
     var hasShownApiKeyWarning by remember { mutableStateOf(false) }
 
@@ -279,6 +282,42 @@ fun ChatScreen(
                 }
             }
         )
+    }
+    
+    // 处理消息发送（使用 LaunchedEffect 避免协程作用域问题）
+    LaunchedEffect(pendingMessage) {
+        if (pendingMessage != null && pendingMessage!!.isNotBlank()) {
+            val message = pendingMessage!!
+            pendingMessage = null  // 清除待发送消息
+            
+            try {
+                val response = withContext(Dispatchers.IO) {
+                    // 使用 chatWithTools 自动处理工具调用
+                    kernel.chatWithTools(message)
+                }
+                // 更清晰的错误显示
+                val content = when {
+                    response.response != null && response.response.isNotBlank() -> response.response
+                    response.error != null && response.error.isNotBlank() -> "❌ 错误: ${response.error}"
+                    else -> "⚠️ 无响应"
+                }
+                val assistantMessage = Message(role = "assistant", content = content)
+                currentSession = currentSession.addMessage(assistantMessage)
+                sessionManager.saveSession(currentSession)
+            } catch (e: Exception) {
+                // 显示详细错误信息
+                val errorMsg = "发送失败: ${e.message}\n类型: ${e.javaClass.simpleName}"
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(context, errorMsg, Toast.LENGTH_LONG).show()
+                }
+                // 也在消息中显示错误
+                val errorMessage = Message(role = "assistant", content = "❌ 发送失败: ${e.message}")
+                currentSession = currentSession.addMessage(errorMessage)
+                sessionManager.saveSession(currentSession)
+            } finally {
+                isLoading = false
+            }
+        }
     }
 
     Column(
@@ -378,33 +417,8 @@ fun ChatScreen(
                             sessionManager.saveSession(currentSession)
                             isLoading = true
 
-                            scope.launch {
-                                try {
-                                    val response = withContext(Dispatchers.IO) {
-                                        // 使用 chatWithTools 自动处理工具调用
-                                        kernel.chatWithTools(message)
-                                    }
-                                    // 更清晰的错误显示
-                                    val content = when {
-                                        response.response != null && response.response.isNotBlank() -> response.response
-                                        response.error != null && response.error.isNotBlank() -> "❌ 错误: ${response.error}"
-                                        else -> "⚠️ 无响应"
-                                    }
-                                    val assistantMessage = Message(role = "assistant", content = content)
-                                    currentSession = currentSession.addMessage(assistantMessage)
-                                    sessionManager.saveSession(currentSession)
-                                } catch (e: Exception) {
-                                    // 显示详细错误信息
-                                    val errorMsg = "发送失败: ${e.message}\n类型: ${e.javaClass.simpleName}"
-                                    Toast.makeText(context, errorMsg, Toast.LENGTH_LONG).show()
-                                    // 也在消息中显示错误
-                                    val errorMessage = Message(role = "assistant", content = "❌ 发送失败: ${e.message}")
-                                    currentSession = currentSession.addMessage(errorMessage)
-                                    sessionManager.saveSession(currentSession)
-                                } finally {
-                                    isLoading = false
-                                }
-                            }
+                            // 设置待发送消息，触发 LaunchedEffect
+                            pendingMessage = message
                         } else if (apiKey.isBlank()) {
                             Toast.makeText(context, "请先配置 API Key", Toast.LENGTH_SHORT).show()
                         }
