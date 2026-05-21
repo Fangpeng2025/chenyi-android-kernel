@@ -256,7 +256,7 @@ class HotUpdateManager(private val context: Context) {
                 
                 Log.d(TAG, "远程版本: $tagName")
                 
-                val hasUpdate = currentVersion != tagName && tagName.isNotEmpty()
+                val hasUpdate = currentVersion != tagName && !tagName.isNullOrEmpty()
                 
                 // 获取 APK 下载链接
                 val apkUrl = if (hasUpdate) {

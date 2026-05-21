@@ -693,6 +693,24 @@ fun SettingsScreen(
     var tempEndpoint by remember { mutableStateOf(apiEndpoint) }
     var tempModel by remember { mutableStateOf(modelName) }
     var showPassword by remember { mutableStateOf(false) }
+    
+    // 安装 APK 的函数
+    fun installApk(apkFile: File) {
+        try {
+            val intent = Intent(Intent.ACTION_VIEW)
+            val uri = FileProvider.getUriForFile(
+                context,
+                "${context.packageName}.fileprovider",
+                apkFile
+            )
+            intent.setDataAndType(uri, "application/vnd.android.package-archive")
+            intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            context.startActivity(intent)
+        } catch (e: Exception) {
+            Toast.makeText(context, "安装失败: ${e.message}", Toast.LENGTH_SHORT).show()
+        }
+    }
 
     Column(
         modifier = Modifier
@@ -911,7 +929,7 @@ fun SettingsScreen(
                                 showApkUpdateDialog = false
                                 if (success && apkFile != null) {
                                     // 安装 APK
-                                    installApk(context, apkFile)
+                                    installApk(apkFile)
                                 } else {
                                     Toast.makeText(context, "下载失败", Toast.LENGTH_SHORT).show()
                                 }
@@ -931,27 +949,7 @@ fun SettingsScreen(
             }
         )
     }
-}
-
-/**
- * 安装 APK
- */
-private fun installApk(context: Context, apkFile: File) {
-    try {
-        val intent = Intent(Intent.ACTION_VIEW)
-        val uri = FileProvider.getUriForFile(
-            context,
-            "${context.packageName}.fileprovider",
-            apkFile
-        )
-        intent.setDataAndType(uri, "application/vnd.android.package-archive")
-        intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        context.startActivity(intent)
-    } catch (e: Exception) {
-        Toast.makeText(context, "安装失败: ${e.message}", Toast.LENGTH_SHORT).show()
-    }
-}
+    
     // API Key 编辑对话框
     if (showApiKeyEditor) {
         AlertDialog(
