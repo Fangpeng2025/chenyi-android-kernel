@@ -68,10 +68,8 @@ class MainActivity : ComponentActivity() {
         ocrEngine = OcrEngine(this)
         sessionManager = SessionManager(this)
 
-        // 启动截图前台服务（Android 14+ 需要）
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-            startForegroundService(Intent(this, ScreenshotService::class.java))
-        }
+        // 注意：Android 14+ 不允许从后台启动前台服务
+        // 截图服务将在用户点击截图按钮时启动（此时应用在前台）
 
         setContent {
             MaterialTheme {
@@ -145,6 +143,11 @@ fun WeChatStyleApp(
             }
 
             override fun requestPermission(activity: ComponentActivity) {
+                // Android 14+ 需要先启动前台服务（应用在前台时）
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                    val serviceIntent = Intent(activity, ScreenshotService::class.java)
+                    activity.startForegroundService(serviceIntent)
+                }
                 screenshotManager.requestPermission(activity)
             }
 
