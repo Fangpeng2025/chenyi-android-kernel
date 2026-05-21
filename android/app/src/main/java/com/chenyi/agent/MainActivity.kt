@@ -290,21 +290,30 @@ fun ChatScreen(
             val message = pendingMessage!!
             pendingMessage = null  // 清除待发送消息
             
+            Log.d("ChatScreen", "开始处理消息: $message")
+            
             try {
                 val response = withContext(Dispatchers.IO) {
                     // 使用 chatWithTools 自动处理工具调用
                     kernel.chatWithTools(message)
                 }
+                
+                Log.d("ChatScreen", "收到响应: success=${response.success}, error=${response.error}")
+                
                 // 更清晰的错误显示
                 val content = when {
                     response.response != null && response.response.isNotBlank() -> response.response
                     response.error != null && response.error.isNotBlank() -> "❌ 错误: ${response.error}"
                     else -> "⚠️ 无响应"
                 }
+                
+                Log.d("ChatScreen", "显示内容: $content")
+                
                 val assistantMessage = Message(role = "assistant", content = content)
                 currentSession = currentSession.addMessage(assistantMessage)
                 sessionManager.saveSession(currentSession)
             } catch (e: Exception) {
+                Log.e("ChatScreen", "发送失败", e)
                 // 显示详细错误信息
                 val errorMsg = "发送失败: ${e.message}\n类型: ${e.javaClass.simpleName}"
                 withContext(Dispatchers.Main) {
@@ -315,6 +324,7 @@ fun ChatScreen(
                 currentSession = currentSession.addMessage(errorMessage)
                 sessionManager.saveSession(currentSession)
             } finally {
+                Log.d("ChatScreen", "处理完成，isLoading = false")
                 isLoading = false
             }
         }
