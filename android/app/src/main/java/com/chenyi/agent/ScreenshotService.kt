@@ -174,7 +174,7 @@ class ScreenshotService : Service() {
                 screenHeight,
                 screenDensity,
                 DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
-                imageReader,
+                imageReader?.surface,
                 null,
                 Handler(Looper.getMainLooper())
             )
