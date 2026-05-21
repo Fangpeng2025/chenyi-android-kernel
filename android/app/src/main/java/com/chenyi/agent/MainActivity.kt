@@ -61,6 +61,10 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
 
         prefs = getSharedPreferences("chenyi_config", Context.MODE_PRIVATE)
+        
+        // 先初始化内核库（加载 Rust native library）
+        Kernel.initLibrary(this)
+        
         kernel = Kernel(this)
         val initialized = kernel.init()
         screenshotManager = ScreenshotManager(this)

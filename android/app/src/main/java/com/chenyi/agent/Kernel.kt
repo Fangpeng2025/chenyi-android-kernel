@@ -11,18 +11,26 @@ class Kernel(private val context: Context) {
 
     companion object {
         private const val TAG = "Kernel"
+        private var libraryLoaded = false
         
-        init {
-            // 尝试加载热更新的库
+        /**
+         * 初始化内核库（必须在创建 Kernel 实例前调用）
+         */
+        @Synchronized
+        fun initLibrary(context: Context) {
+            if (libraryLoaded) return
+            
             try {
-                val hotUpdateManager = HotUpdateManager(android.app.Application())
+                val hotUpdateManager = HotUpdateManager(context.applicationContext)
                 if (!hotUpdateManager.loadUpdatedLibrary()) {
                     // 如果没有热更新的库，加载默认库
                     System.loadLibrary("chenyi")
                 }
+                libraryLoaded = true
             } catch (e: Exception) {
                 Log.e(TAG, "加载热更新库失败，使用默认库", e)
                 System.loadLibrary("chenyi")
+                libraryLoaded = true
             }
         }
     }
