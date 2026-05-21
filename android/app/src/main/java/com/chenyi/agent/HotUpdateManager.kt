@@ -1,9 +1,12 @@
 package com.chenyi.agent
 
 import android.content.Context
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
 import java.io.File
 import java.io.FileOutputStream
+import java.net.HttpURLConnection
 import java.net.URL
 import java.security.MessageDigest
 import java.util.concurrent.Executors
@@ -35,8 +38,8 @@ class HotUpdateManager(private val context: Context) {
                 val currentVersion = getCurrentVersion()
                 Log.d(TAG, "当前版本: $currentVersion")
                 
-                // 获取远程版本
-                val remoteVersion = getRemoteVersion()
+                // 获取远程版本（设置超时）
+                val remoteVersion = getRemoteVersionWithTimeout()
                 Log.d(TAG, "远程版本: $remoteVersion")
                 
                 val hasUpdate = currentVersion != remoteVersion
@@ -46,10 +49,15 @@ class HotUpdateManager(private val context: Context) {
                     "已是最新版本"
                 }
                 
-                callback(hasUpdate, message)
+                // 在主线程回调
+                Handler(Looper.getMainLooper()).post {
+                    callback(hasUpdate, message)
+                }
             } catch (e: Exception) {
                 Log.e(TAG, "检查更新失败", e)
-                callback(false, "检查更新失败: ${e.message}")
+                Handler(Looper.getMainLooper()).post {
+                    callback(false, "检查更新失败: ${e.message}")
+                }
             }
         }
     }
@@ -151,17 +159,27 @@ class HotUpdateManager(private val context: Context) {
     }
     
     /**
-     * 获取远程版本
+     * 获取远程版本（带超时）
      */
-    private fun getRemoteVersion(): String {
+    private fun getRemoteVersionWithTimeout(): String {
         return try {
             val url = URL("https://github.com/Fangpeng2025/chenyi-android-kernel/releases/latest/download/version.txt")
-            url.openStream().use { it.bufferedReader().readText().trim() }
+            val connection = url.openConnection() as HttpURLConnection
+            connection.connectTimeout = 10000 // 10秒连接超时
+            connection.readTimeout = 10000 // 10秒读取超时
+            connection.inputStream.use { it.bufferedReader().readText().trim() }
         } catch (e: Exception) {
             Log.e(TAG, "获取远程版本失败: ${e.message}")
             // 返回当前版本，表示无更新
             getCurrentVersion()
         }
+    }
+    
+    /**
+     * 获取远程版本
+     */
+    private fun getRemoteVersion(): String {
+        return getRemoteVersionWithTimeout()
     }
     
     /**
