@@ -354,16 +354,24 @@ class HotUpdateManager(private val context: Context) {
      * 从 Release JSON 中提取 APK 下载链接
      */
     private fun extractApkUrl(json: String): String? {
-        // 查找 assets 数组中的 APK 文件
-        val assetsPattern = "\"assets\"\\s*:\\s*\\[([^\\]]+)\\]"
-        val assetsMatch = Regex(assetsPattern).find(json)
-        if (assetsMatch == null) return null
+        // 直接查找所有 browser_download_url，选择第一个 .apk 文件
+        // 优先选择 app-release.apk，如果没有则选择 app-debug.apk
+        val urls = mutableListOf<String>()
         
-        val assetsContent = assetsMatch.groupValues[1]
+        // 查找所有 browser_download_url
+        val urlPattern = "\"browser_download_url\"\\s*:\\s*\"([^\"]+)\""
+        Regex(urlPattern).findAll(json).forEach { match ->
+            val url = match.groupValues[1]
+            if (url.endsWith(".apk")) {
+                urls.add(url)
+            }
+        }
         
-        // 查找 .apk 文件的 browser_download_url
-        val urlPattern = "\"browser_download_url\"\\s*:\\s*\"([^\"]+\\.apk)\""
-        val urlMatch = Regex(urlPattern).find(assetsContent)
-        return urlMatch?.groupValues?.getOrNull(1)
+        Log.d(TAG, "找到 APK URL: $urls")
+        
+        // 优先选择 app-release.apk
+        return urls.firstOrNull { it.contains("app-release.apk") }
+            ?: urls.firstOrNull { it.contains("app-debug.apk") }
+            ?: urls.firstOrNull()
     }
 }
