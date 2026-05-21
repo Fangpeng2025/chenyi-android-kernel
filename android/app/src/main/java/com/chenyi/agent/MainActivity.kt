@@ -18,6 +18,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
+import androidx.core.content.FileProvider
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -34,6 +35,7 @@ import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.io.File
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -679,6 +681,14 @@ fun SettingsScreen(
     var isUpdating by remember { mutableStateOf(false) }
     val hotUpdateManager = remember { HotUpdateManager(context) }
     
+    // APK 更新状态
+    var showApkUpdateDialog by remember { mutableStateOf(false) }
+    var apkUpdateVersion by remember { mutableStateOf("") }
+    var apkUpdateUrl by remember { mutableStateOf<String?>(null) }
+    var apkUpdateNotes by remember { mutableStateOf<String?>(null) }
+    var apkDownloadProgress by remember { mutableStateOf(0) }
+    var isDownloadingApk by remember { mutableStateOf(false) }
+    
     var tempApiKey by remember { mutableStateOf(apiKey) }
     var tempEndpoint by remember { mutableStateOf(apiEndpoint) }
     var tempModel by remember { mutableStateOf(modelName) }
@@ -774,17 +784,18 @@ fun SettingsScreen(
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // 热更新组
+// 热更新组
         Surface(
             modifier = Modifier.fillMaxWidth(),
             color = Color.White
         ) {
             Column {
+                // 内核热更新
                 WeChatSettingItem(
-                    title = "检查更新",
-                    subtitle = "检查并下载最新内核",
+                    title = "内核热更新",
+                    subtitle = "检查并下载最新 Rust 内核",
                     onClick = {
-                        Toast.makeText(context, "正在检查更新...", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, "正在检查内核更新...", Toast.LENGTH_SHORT).show()
                         hotUpdateManager.checkUpdate { hasUpdate, message ->
                             if (hasUpdate) {
                                 updateMessage = message
@@ -795,15 +806,34 @@ fun SettingsScreen(
                         }
                     }
                 )
+                HorizontalDivider(color = Color(0xFFE5E5E5), thickness = 0.5.dp)
+                // APK 更新
+                WeChatSettingItem(
+                    title = "应用更新",
+                    subtitle = "检查并安装最新版本 APK",
+                    onClick = {
+                        Toast.makeText(context, "正在检查应用更新...", Toast.LENGTH_SHORT).show()
+                        hotUpdateManager.checkApkUpdate { hasUpdate, version, url, notes ->
+                            if (hasUpdate && url != null) {
+                                apkUpdateVersion = version
+                                apkUpdateUrl = url
+                                apkUpdateNotes = notes
+                                showApkUpdateDialog = true
+                            } else {
+                                Toast.makeText(context, "已是最新版本: $version", Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                    }
+                )
             }
         }
     }
 
-    // 更新确认对话框
+    // 内核更新确认对话框
     if (showUpdateDialog) {
         AlertDialog(
             onDismissRequest = { if (!isUpdating) showUpdateDialog = false },
-            title = { Text("发现新版本") },
+            title = { Text("发现新内核版本") },
             text = { 
                 Column {
                     Text(updateMessage)
@@ -836,13 +866,92 @@ fun SettingsScreen(
             dismissButton = {
                 if (!isUpdating) {
                     TextButton(onClick = { showUpdateDialog = false }) {
-                        Text("稍后再说")
+                        Text("取消")
                     }
                 }
             }
         )
     }
 
+    // APK 更新确认对话框
+    if (showApkUpdateDialog) {
+        AlertDialog(
+            onDismissRequest = { if (!isDownloadingApk) showApkUpdateDialog = false },
+            title = { Text("发现新版本: $apkUpdateVersion") },
+            text = { 
+                Column {
+                    if (apkUpdateNotes != null) {
+                        Text(apkUpdateNotes!!, modifier = Modifier.padding(bottom = 8.dp))
+                    }
+                    if (isDownloadingApk) {
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            CircularProgressIndicator(
+                                progress = { apkDownloadProgress.toFloat() / 100 },
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Text("下载进度: $apkDownloadProgress%")
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                if (!isDownloadingApk && apkUpdateUrl != null) {
+                    TextButton(onClick = {
+                        isDownloadingApk = true
+                        apkDownloadProgress = 0
+                        hotUpdateManager.downloadApk(
+                            apkUpdateUrl!!,
+                            { progress -> apkDownloadProgress = progress },
+                            { success, apkFile ->
+                                isDownloadingApk = false
+                                showApkUpdateDialog = false
+                                if (success && apkFile != null) {
+                                    // 安装 APK
+                                    installApk(context, apkFile)
+                                } else {
+                                    Toast.makeText(context, "下载失败", Toast.LENGTH_SHORT).show()
+                                }
+                            }
+                        )
+                    }) {
+                        Text("下载并安装")
+                    }
+                }
+            },
+            dismissButton = {
+                if (!isDownloadingApk) {
+                    TextButton(onClick = { showApkUpdateDialog = false }) {
+                        Text("取消")
+                    }
+                }
+            }
+        )
+    }
+}
+
+/**
+ * 安装 APK
+ */
+private fun installApk(context: Context, apkFile: File) {
+    try {
+        val intent = Intent(Intent.ACTION_VIEW)
+        val uri = FileProvider.getUriForFile(
+            context,
+            "${context.packageName}.fileprovider",
+            apkFile
+        )
+        intent.setDataAndType(uri, "application/vnd.android.package-archive")
+        intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        context.startActivity(intent)
+    } catch (e: Exception) {
+        Toast.makeText(context, "安装失败: ${e.message}", Toast.LENGTH_SHORT).show()
+    }
+}
     // API Key 编辑对话框
     if (showApiKeyEditor) {
         AlertDialog(

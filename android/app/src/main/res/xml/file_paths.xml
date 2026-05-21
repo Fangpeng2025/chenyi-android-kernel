@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <!-- 缓存目录，用于存放下载的 APK -->
+    <cache-path name="cache" path="." />
+    <!-- 文件目录 -->
+    <files-path name="files" path="." />
+</paths>

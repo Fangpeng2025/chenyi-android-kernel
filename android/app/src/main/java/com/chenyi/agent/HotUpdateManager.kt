@@ -22,6 +22,7 @@ class HotUpdateManager(private val context: Context) {
         private const val LIB_NAME = "libchenyi.so"
         private const val UPDATE_URL = "https://github.com/Fangpeng2025/chenyi-android-kernel/releases/latest/download/libchenyi.so"
         private const val VERSION_FILE = "kernel_version.txt"
+        private const val GITHUB_API = "https://api.github.com/repos/Fangpeng2025/chenyi-android-kernel/releases/latest"
     }
     
     private val executor = Executors.newSingleThreadExecutor()
@@ -223,5 +224,146 @@ class HotUpdateManager(private val context: Context) {
             Log.e(TAG, "回滚失败", e)
             false
         }
+    }
+    
+    // ==================== APK 自动更新功能 ====================
+    
+    /**
+     * 检查 APK 更新（从 GitHub Release）
+     */
+    fun checkApkUpdate(callback: (Boolean, String, String?, String?) -> Unit) {
+        executor.execute {
+            try {
+                Log.d(TAG, "检查 APK 更新...")
+                
+                // 获取当前 APK 版本
+                val currentVersion = getAppVersion()
+                Log.d(TAG, "当前 APK 版本: $currentVersion")
+                
+                // 从 GitHub API 获取最新 Release 信息
+                val connection = URL(GITHUB_API).openConnection() as HttpURLConnection
+                connection.connectTimeout = 10000
+                connection.readTimeout = 10000
+                connection.setRequestProperty("Accept", "application/vnd.github.v3+json")
+                
+                val response = connection.inputStream.use { it.bufferedReader().readText() }
+                Log.d(TAG, "GitHub API 响应: $response")
+                
+                // 解析 JSON（简单解析，不使用 Gson）
+                val tagName = extractJsonValue(response, "tag_name")
+                val releaseName = extractJsonValue(response, "name")
+                val releaseNotes = extractJsonValue(response, "body")
+                
+                Log.d(TAG, "远程版本: $tagName")
+                
+                val hasUpdate = currentVersion != tagName && tagName.isNotEmpty()
+                
+                // 获取 APK 下载链接
+                val apkUrl = if (hasUpdate) {
+                    // 从 assets 中查找 APK
+                    extractApkUrl(response)
+                } else null
+                
+                Handler(Looper.getMainLooper()).post {
+                    callback(hasUpdate, tagName ?: "未知版本", apkUrl, releaseNotes)
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "检查 APK 更新失败", e)
+                Handler(Looper.getMainLooper()).post {
+                    callback(false, "检查失败: ${e.message}", null, null)
+                }
+            }
+        }
+    }
+    
+    /**
+     * 下载 APK 文件
+     */
+    fun downloadApk(apkUrl: String, progressCallback: (Int) -> Unit, completeCallback: (Boolean, File?) -> Unit) {
+        executor.execute {
+            try {
+                Log.d(TAG, "开始下载 APK: $apkUrl")
+                
+                val apkFile = File(context.cacheDir, "update.apk")
+                if (apkFile.exists()) apkFile.delete()
+                
+                val connection = URL(apkUrl).openConnection() as HttpURLConnection
+                connection.connectTimeout = 15000
+                connection.readTimeout = 60000 // APK 较大，设置更长超时
+                
+                val fileSize = connection.contentLength
+                Log.d(TAG, "APK 大小: $fileSize bytes")
+                
+                var downloaded = 0
+                val buffer = ByteArray(8192)
+                
+                connection.inputStream.use { input ->
+                    FileOutputStream(apkFile).use { output ->
+                        var bytesRead: Int
+                        while (input.read(buffer).also { bytesRead = it } != -1) {
+                            output.write(buffer, 0, bytesRead)
+                            downloaded += bytesRead
+                            
+                            if (fileSize > 0) {
+                                val progress = (downloaded * 100 / fileSize)
+                                Handler(Looper.getMainLooper()).post {
+                                    progressCallback(progress)
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                Log.d(TAG, "APK 下载完成: ${apkFile.absolutePath}")
+                Handler(Looper.getMainLooper()).post {
+                    completeCallback(true, apkFile)
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "APK 下载失败", e)
+                Handler(Looper.getMainLooper()).post {
+                    completeCallback(false, null)
+                }
+            }
+        }
+    }
+    
+    /**
+     * 获取应用版本号
+     */
+    private fun getAppVersion(): String {
+        return try {
+            val packageInfo = context.packageManager.getPackageInfo(context.packageName, 0)
+            packageInfo.versionName ?: "unknown"
+        } catch (e: Exception) {
+            Log.e(TAG, "获取应用版本失败", e)
+            "unknown"
+        }
+    }
+    
+    /**
+     * 从 JSON 字符串中提取值（简单解析）
+     */
+    private fun extractJsonValue(json: String, key: String): String? {
+        val pattern = "\"$key\"\\s*:\\s*\"([^\"]+)\""
+        val regex = Regex(pattern)
+        val match = regex.find(json)
+        return match?.groupValues?.getOrNull(1)
+    }
+    
+    /**
+     * 从 Release JSON 中提取 APK 下载链接
+     */
+    private fun extractApkUrl(json: String): String? {
+        // 查找 assets 数组中的 APK 文件
+        val assetsPattern = "\"assets\"\\s*:\\s*\\[([^\\]]+)\\]"
+        val assetsMatch = Regex(assetsPattern).find(json)
+        if (assetsMatch == null) return null
+        
+        val assetsContent = assetsMatch.groupValues[1]
+        
+        // 查找 .apk 文件的 browser_download_url
+        val urlPattern = "\"browser_download_url\"\\s*:\\s*\"([^\"]+\\.apk)\""
+        val urlMatch = Regex(urlPattern).find(assetsContent)
+        return urlMatch?.groupValues?.getOrNull(1)
     }
 }
