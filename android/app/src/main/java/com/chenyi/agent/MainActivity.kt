@@ -139,6 +139,17 @@ fun WeChatStyleApp(
 ) {
     var selectedTab by remember { mutableStateOf(0) }
     val context = LocalContext.current
+    
+    // 无障碍服务检查
+    var showA11yDialog by remember { mutableStateOf(false) }
+    val a11yService = ChenyiAccessibilityService.getInstance()
+    
+    // 启动时检查无障碍服务
+    LaunchedEffect(Unit) {
+        if (a11yService == null) {
+            showA11yDialog = true
+        }
+    }
 
     // 截图辅助对象 - 根据 Android 版本选择使用 ScreenshotService 或 ScreenshotManager
     val screenshotHelper = remember {
@@ -187,6 +198,37 @@ fun WeChatStyleApp(
                 3 -> ProfileScreen(kernelInitialized, screenshotManager, screenshotHelper)
             }
         }
+    }
+    
+    // 无障碍服务提示弹窗
+    if (showA11yDialog) {
+        AlertDialog(
+            onDismissRequest = { showA11yDialog = false },
+            title = { Text("需要开启无障碍服务") },
+            text = { 
+                Text("晨翼Agent 需要无障碍服务才能使用大部分功能，包括：\n\n" +
+                     "• 自动化操作（点击、滑动等）\n" +
+                     "• 屏幕截图和 OCR 识别\n" +
+                     "• 界面元素分析\n\n" +
+                     "请前往设置开启无障碍服务。")
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showA11yDialog = false
+                        val intent = Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS)
+                        context.startActivity(intent)
+                    }
+                ) {
+                    Text("去开启")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showA11yDialog = false }) {
+                    Text("稍后再说")
+                }
+            }
+        )
     }
 }
 
@@ -1241,7 +1283,7 @@ fun ProfileScreen(
                 )
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    text = "版本 1.0.0",
+                    text = "版本 ${BuildConfig.VERSION_NAME}",
                     fontSize = 14.sp,
                     color = Color.Gray
                 )
