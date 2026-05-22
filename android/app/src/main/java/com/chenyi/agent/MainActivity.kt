@@ -754,18 +754,32 @@ fun SettingsScreen(
     // 安装 APK 的函数
     fun installApk(apkFile: File) {
         try {
+            Log.d("Settings", "准备安装 APK: ${apkFile.absolutePath}")
+            
+            if (!apkFile.exists()) {
+                Toast.makeText(context, "APK 文件不存在", Toast.LENGTH_LONG).show()
+                Log.e("Settings", "APK 文件不存在: ${apkFile.absolutePath}")
+                return
+            }
+            
             val intent = Intent(Intent.ACTION_VIEW)
             val uri = FileProvider.getUriForFile(
                 context,
                 "${context.packageName}.fileprovider",
                 apkFile
             )
+            Log.d("Settings", "FileProvider URI: $uri")
+            
             intent.setDataAndType(uri, "application/vnd.android.package-archive")
             intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            
+            Log.d("Settings", "启动安装界面...")
             context.startActivity(intent)
+            Log.d("Settings", "安装界面已启动")
         } catch (e: Exception) {
-            Toast.makeText(context, "安装失败: ${e.message}", Toast.LENGTH_SHORT).show()
+            Log.e("Settings", "安装失败", e)
+            Toast.makeText(context, "安装失败: ${e.message}", Toast.LENGTH_LONG).show()
         }
     }
 
@@ -985,10 +999,14 @@ fun SettingsScreen(
                                 isDownloadingApk = false
                                 showApkUpdateDialog = false
                                 if (success && apkFile != null) {
-                                    // 安装 APK
-                                    installApk(apkFile)
+                                    Log.d("Settings", "APK 下载成功: ${apkFile.absolutePath}, 大小: ${apkFile.length()}")
+                                    Toast.makeText(context, "下载完成，正在打开安装界面...", Toast.LENGTH_SHORT).show()
+                                    // 延迟一下，让 Toast 显示
+                                    Handler(Looper.getMainLooper()).postDelayed({
+                                        installApk(apkFile)
+                                    }, 500)
                                 } else {
-                                    Toast.makeText(context, "下载失败", Toast.LENGTH_SHORT).show()
+                                    Toast.makeText(context, "下载失败，请重试", Toast.LENGTH_LONG).show()
                                 }
                             }
                         )
