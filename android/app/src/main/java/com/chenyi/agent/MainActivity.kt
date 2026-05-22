@@ -301,11 +301,23 @@ fun ChatScreen(
                 
                 Log.d("ChatScreen", "收到响应: success=${response.success}, error=${response.error}")
                 
-                // 更清晰的错误显示
+                // 更友好的错误显示
                 val content = when {
                     response.response != null && response.response.isNotBlank() -> response.response
-                    response.error != null && response.error.isNotBlank() -> "❌ 错误: ${response.error}"
-                    else -> "⚠️ 无响应"
+                    response.error != null && response.error.isNotBlank() -> {
+                        // 解析错误类型，提供友好提示
+                        val error = response.error
+                        when {
+                            error.contains("401") || error.contains("无效的令牌") || error.contains("Unauthorized") -> 
+                                "❌ API Key 无效或已过期\n\n请前往设置页面检查并更新 API Key"
+                            error.contains("无障碍服务") -> 
+                                "❌ ${error}\n\n请前往设置 → 无障碍 → 晨翼Agent 开启服务"
+                            error.contains("网络") || error.contains("timeout") -> 
+                                "❌ 网络连接失败\n\n请检查网络连接后重试"
+                            else -> "❌ 错误: ${error}"
+                        }
+                    }
+                    else -> "⚠️ 无响应，请稍后重试"
                 }
                 
                 Log.d("ChatScreen", "显示内容: $content")
@@ -589,32 +601,52 @@ fun ToolsScreen(
 
             // OCR 工具
             item {
+                val a11yService = ChenyiAccessibilityService.getInstance()
+                val a11yConnected = a11yService?.isConnected() == true
+                val screenshotAuth = screenshotHelper.isAuthorized()
+                val ocrReady = ocrEngine.isInitialized()
+                
                 WeChatToolItem(
                     icon = Icons.Default.DocumentScanner,
                     title = "OCR 识别",
-                    subtitle = if (ocrEngine.isInitialized()) "已就绪 - 点击识别" else "初始化中...",
+                    subtitle = when {
+                        !a11yConnected -> "❌ 无障碍服务未开启"
+                        !screenshotAuth -> "⚠️ 截图权限未授权"
+                        !ocrReady -> "⏳ OCR 初始化中..."
+                        else -> "✅ 已就绪 - 点击识别"
+                    },
                     onClick = {
-                        if (!ocrEngine.isInitialized()) {
-                            Toast.makeText(context, "OCR 正在初始化，请稍后再试", Toast.LENGTH_SHORT).show()
-                        } else if (!screenshotHelper.isAuthorized()) {
-                            Toast.makeText(context, "请先授权截图权限", Toast.LENGTH_SHORT).show()
-                        } else {
-                            scope.launch {
-                                try {
-                                    val bitmap = screenshotHelper.capture()
-                                    if (bitmap != null) {
-                                        val result = ocrEngine.recognize(bitmap)
-                                        bitmap.recycle()
-                                        if (result.success) {
-                                            Toast.makeText(context, "识别成功: ${result.fullText.take(50)}...", Toast.LENGTH_LONG).show()
+                        when {
+                            !a11yConnected -> {
+                                Toast.makeText(context, "请先开启无障碍服务\n设置 → 无障碍 → 晨翼Agent", Toast.LENGTH_LONG).show()
+                            }
+                            !screenshotAuth -> {
+                                if (activity != null) {
+                                    Toast.makeText(context, "请授权截图权限", Toast.LENGTH_SHORT).show()
+                                    screenshotHelper.requestPermission(activity)
+                                }
+                            }
+                            !ocrReady -> {
+                                Toast.makeText(context, "OCR 正在初始化，请稍候...", Toast.LENGTH_SHORT).show()
+                            }
+                            else -> {
+                                scope.launch {
+                                    try {
+                                        val bitmap = screenshotHelper.capture()
+                                        if (bitmap != null) {
+                                            val result = ocrEngine.recognize(bitmap)
+                                            bitmap.recycle()
+                                            if (result.success) {
+                                                Toast.makeText(context, "识别成功:\n${result.fullText.take(100)}", Toast.LENGTH_LONG).show()
+                                            } else {
+                                                Toast.makeText(context, "识别失败: ${result.error}", Toast.LENGTH_SHORT).show()
+                                            }
                                         } else {
-                                            Toast.makeText(context, "识别失败: ${result.error}", Toast.LENGTH_SHORT).show()
+                                            Toast.makeText(context, "截图失败", Toast.LENGTH_SHORT).show()
                                         }
-                                    } else {
-                                        Toast.makeText(context, "截图失败", Toast.LENGTH_SHORT).show()
+                                    } catch (e: Exception) {
+                                        Toast.makeText(context, "OCR 失败: ${e.message}", Toast.LENGTH_SHORT).show()
                                     }
-                                } catch (e: Exception) {
-                                    Toast.makeText(context, "OCR 失败: ${e.message}", Toast.LENGTH_SHORT).show()
                                 }
                             }
                         }
