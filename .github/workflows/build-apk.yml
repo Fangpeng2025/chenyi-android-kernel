@@ -124,12 +124,11 @@ jobs:
         working-directory: android/app
         run: |
           # 从 GitHub Secrets 恢复 keystore
-          # 如果没有 secrets.KEYSTORE_BASE64，则生成一个新的固定 keystore
           if [ -n "${{ secrets.KEYSTORE_BASE64 }}" ]; then
             echo "Using keystore from GitHub Secrets"
             echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > chenyi-release.keystore
           else
-            echo "Generating new keystore (will be added to Secrets later)"
+            echo "Generating new fixed keystore..."
             keytool -genkeypair -v \
               -keystore chenyi-release.keystore \
               -keyalg RSA \
@@ -140,9 +139,20 @@ jobs:
               -keypass chenyi2026agent \
               -dname "CN=ChenYi Agent, OU=Development, O=ChenYi Team, L=Zhengzhou, ST=Henan, C=CN"
             
-            # 保存 keystore 的 base64 编码，方便上传到 Secrets
-            echo "KEYSTORE_BASE64=$(base64 -w 0 chenyi-release.keystore)" >> $GITHUB_STEP_SUMMARY
-            echo "::warning::Generated new keystore. Please upload KEYSTORE_BASE64 to GitHub Secrets!"
+            # 保存 keystore 的 base64 编码到文件
+            base64 -w 0 chenyi-release.keystore > keystore_base64.txt
+            
+            echo ""
+            echo "========================================="
+            echo "⚠️  重要：请将以下内容添加到 GitHub Secrets"
+            echo "========================================="
+            echo ""
+            echo "Secret Name: KEYSTORE_BASE64"
+            echo "Secret Value:"
+            cat keystore_base64.txt
+            echo ""
+            echo "========================================="
+            echo ""
           fi
           
           ls -la chenyi-release.keystore
@@ -161,6 +171,14 @@ jobs:
             -Pandroid.injected.signing.store.password=$KEYSTORE_PASSWORD \
             -Pandroid.injected.signing.key.alias=$KEY_ALIAS \
             -Pandroid.injected.signing.key.password=$KEY_PASSWORD
+
+      - name: Upload Keystore Base64
+        if: ${{ secrets.KEYSTORE_BASE64 == '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: keystore-base64
+          path: android/app/keystore_base64.txt
+          retention-days: 1
 
       - name: Upload Debug APK
         uses: actions/upload-artifact@v4
