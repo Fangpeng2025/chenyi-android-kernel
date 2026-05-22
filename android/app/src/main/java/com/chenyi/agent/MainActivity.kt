@@ -985,7 +985,7 @@ fun SettingsScreen(
                 )
             }
         }
-        
+
         Spacer(modifier = Modifier.height(16.dp))
         
         // 关于信息
@@ -1019,6 +1019,7 @@ fun SettingsScreen(
                 )
             }
         }
+    }
 
     // 内核更新确认对话框
     if (showUpdateDialog) {
