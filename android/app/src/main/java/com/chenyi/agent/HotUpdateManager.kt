@@ -118,21 +118,34 @@ class HotUpdateManager(private val context: Context) {
      * 下载库文件
      */
     private fun downloadLibrary(): File {
-        val url = URL(UPDATE_URL)
         val tempFile = File(context.cacheDir, "$LIB_NAME.tmp")
         
-        url.openStream().use { input ->
-            FileOutputStream(tempFile).use { output ->
-                val buffer = ByteArray(8192)
-                var bytesRead: Int
-                
-                while (input.read(buffer).also { bytesRead = it } != -1) {
-                    output.write(buffer, 0, bytesRead)
+        // 尝试从多个 URL 下载
+        for (urlStr in UPDATE_URLS) {
+            try {
+                Log.d(TAG, "尝试下载: $urlStr")
+                val url = URL(urlStr)
+                url.openStream().use { input ->
+                    FileOutputStream(tempFile).use { output ->
+                        val buffer = ByteArray(8192)
+                        var bytesRead: Int
+                        
+                        while (input.read(buffer).also { bytesRead = it } != -1) {
+                            output.write(buffer, 0, bytesRead)
+                        }
+                    }
                 }
+                
+                if (tempFile.exists() && tempFile.length() > 0) {
+                    Log.d(TAG, "下载成功: ${tempFile.length()} bytes")
+                    return tempFile
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "下载失败: $urlStr - ${e.message}")
             }
         }
         
-        return tempFile
+        throw Exception("所有下载源均失败")
     }
     
     /**
