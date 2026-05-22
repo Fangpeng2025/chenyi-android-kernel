@@ -129,7 +129,7 @@ jobs:
             echo "Using keystore from GitHub Secrets"
             echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > chenyi-release.keystore
           else
-            echo "Generating new keystore (will be uploaded to Secrets later)"
+            echo "Generating new keystore (will be added to Secrets later)"
             keytool -genkeypair -v \
               -keystore chenyi-release.keystore \
               -keyalg RSA \
@@ -155,7 +155,7 @@ jobs:
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD || 'chenyi2026agent' }}
         run: |
           gradle assembleRelease --no-daemon \
-            -Pandroid.injected.signing.store.file=app/chenyi-release.keystore \
+            -Pandroid.injected.signing.store.file=chenyi-release.keystore \
             -Pandroid.injected.signing.store.password=$KEYSTORE_PASSWORD \
             -Pandroid.injected.signing.key.alias=$KEY_ALIAS \
             -Pandroid.injected.signing.key.password=$KEY_PASSWORD
