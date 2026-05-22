@@ -127,6 +127,7 @@ jobs:
           if [ -n "${{ secrets.KEYSTORE_BASE64 }}" ]; then
             echo "Using keystore from GitHub Secrets"
             echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > chenyi-release.keystore
+            echo "KEYSTORE_BASE64_EXISTS=true" >> $GITHUB_ENV
           else
             echo "Generating new fixed keystore..."
             keytool -genkeypair -v \
@@ -173,7 +174,7 @@ jobs:
             -Pandroid.injected.signing.key.password=$KEY_PASSWORD
 
       - name: Upload Keystore Base64
-        if: ${{ secrets.KEYSTORE_BASE64 == '' }}
+        if: env.KEYSTORE_BASE64_EXISTS != 'true'
         uses: actions/upload-artifact@v4
         with:
           name: keystore-base64
