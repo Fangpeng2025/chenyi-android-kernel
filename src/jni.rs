@@ -55,11 +55,23 @@ pub extern "system" fn Java_com_chenyi_agent_Kernel_nativeSetApiKey(
     let mut guard = cell.lock();
     
     if let Some(kernel) = guard.as_mut() {
-        // 使用 Arc::make_mut 获取可变引用
-        let llm = Arc::make_mut(&mut kernel.llm);
-        llm.update_config(&api_key, &base_url, &model);
-        log::info!("[JNI] API Key 已更新");
-        true as jboolean
+        // LlmClient 没有 Clone，所以需要重新创建
+        let mut new_config = kernel.llm.config.clone();
+        new_config.api_key = api_key;
+        new_config.endpoint = base_url;
+        new_config.model = model;
+        
+        match crate::llm::LlmClient::new(new_config) {
+            Ok(new_client) => {
+                kernel.llm = Arc::new(new_client);
+                log::info!("[JNI] API Key 已更新");
+                true as jboolean
+            }
+            Err(e) => {
+                log::error!("[JNI] 创建 LLM 客户端失败: {}", e);
+                false as jboolean
+            }
+        }
     } else {
         log::error!("[JNI] 错误: 内核未初始化，无法设置 API Key");
         false as jboolean
