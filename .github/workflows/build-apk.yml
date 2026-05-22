@@ -120,10 +120,45 @@ jobs:
         run: |
           gradle assembleDebug --no-daemon
 
+      - name: Decode Keystore
+        working-directory: android/app
+        run: |
+          # 从 GitHub Secrets 恢复 keystore
+          # 如果没有 secrets.KEYSTORE_BASE64，则生成一个新的固定 keystore
+          if [ -n "${{ secrets.KEYSTORE_BASE64 }}" ]; then
+            echo "Using keystore from GitHub Secrets"
+            echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > chenyi-release.keystore
+          else
+            echo "Generating new keystore (will be uploaded to Secrets later)"
+            keytool -genkeypair -v \
+              -keystore chenyi-release.keystore \
+              -keyalg RSA \
+              -keysize 2048 \
+              -validity 10000 \
+              -alias chenyi-agent \
+              -storepass chenyi2026agent \
+              -keypass chenyi2026agent \
+              -dname "CN=ChenYi Agent, OU=Development, O=ChenYi Team, L=Zhengzhou, ST=Henan, C=CN"
+            
+            # 保存 keystore 的 base64 编码，方便上传到 Secrets
+            echo "KEYSTORE_BASE64=$(base64 -w 0 chenyi-release.keystore)" >> $GITHUB_STEP_SUMMARY
+            echo "::warning::Generated new keystore. Please upload KEYSTORE_BASE64 to GitHub Secrets!"
+          fi
+          
+          ls -la chenyi-release.keystore
+
       - name: Build Release APK
         working-directory: android
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD || 'chenyi2026agent' }}
+          KEY_ALIAS: chenyi-agent
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD || 'chenyi2026agent' }}
         run: |
-          gradle assembleRelease --no-daemon
+          gradle assembleRelease --no-daemon \
+            -Pandroid.injected.signing.store.file=app/chenyi-release.keystore \
+            -Pandroid.injected.signing.store.password=$KEYSTORE_PASSWORD \
+            -Pandroid.injected.signing.key.alias=$KEY_ALIAS \
+            -Pandroid.injected.signing.key.password=$KEY_PASSWORD
 
       - name: Upload Debug APK
         uses: actions/upload-artifact@v4
