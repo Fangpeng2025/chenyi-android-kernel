@@ -4,7 +4,7 @@ use jni::JNIEnv;
 use jni::objects::{JClass, JString, JObject};
 use jni::sys::{jboolean, jstring};
 use parking_lot::Mutex;
-use std::sync::OnceLock;
+use std::sync::{OnceLock, Arc};
 use tokio::runtime::Runtime;
 
 use crate::agent::AgentKernel;
