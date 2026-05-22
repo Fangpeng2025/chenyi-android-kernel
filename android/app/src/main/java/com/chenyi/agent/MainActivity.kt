@@ -38,6 +38,7 @@ import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import com.chenyi.agent.BuildConfig
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.*
@@ -610,32 +611,45 @@ fun ToolsScreen(
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
+) {
             // 截图工具
             item {
+                val a11yService = ChenyiAccessibilityService.getInstance()
+                val a11yConnected = a11yService != null
+                val screenshotAuth = screenshotHelper.isAuthorized()
+                
                 WeChatToolItem(
                     icon = Icons.Default.Screenshot,
                     title = "截图",
-                    subtitle = if (screenshotHelper.isAuthorized()) "已授权 - 点击截图" else "未授权 - 点击授权",
+                    subtitle = when {
+                        !a11yConnected -> "❌ 无障碍服务未开启"
+                        !screenshotAuth -> "⚠️ 截图权限未授权"
+                        else -> "✅ 已就绪 - 点击截图"
+                    },
                     onClick = {
-                        if (!screenshotHelper.isAuthorized()) {
-                            if (activity != null) {
-                                Toast.makeText(context, "请授权截图权限", Toast.LENGTH_SHORT).show()
-                                screenshotHelper.requestPermission(activity)
-                            } else {
-                                Toast.makeText(context, "无法获取Activity，请从主界面操作", Toast.LENGTH_SHORT).show()
+                        when {
+                            !a11yConnected -> {
+                                Toast.makeText(context, "请先开启无障碍服务\\n设置 → 无障碍 → 晨翼Agent", Toast.LENGTH_LONG).show()
                             }
-                        } else {
-                            scope.launch {
-                                try {
-                                    val bitmap = screenshotHelper.capture()
-                                    if (bitmap != null) {
-                                        Toast.makeText(context, "截图成功", Toast.LENGTH_SHORT).show()
-                                    } else {
-                                        Toast.makeText(context, "截图失败", Toast.LENGTH_SHORT).show()
+                            !screenshotAuth -> {
+                                if (activity != null) {
+                                    Toast.makeText(context, "请授权截图权限", Toast.LENGTH_SHORT).show()
+                                    screenshotHelper.requestPermission(activity)
+                                }
+                            }
+                            else -> {
+                                scope.launch {
+                                    try {
+                                        // 通过 Kernel 执行截图工具（无障碍服务可以截取任何 App）
+                                        val result = kernel.executeTool("screenshot", "{}")
+                                        if (result.success && result.response != null) {
+                                            Toast.makeText(context, "截图成功\\n保存至: ${result.response}", Toast.LENGTH_LONG).show()
+                                        } else {
+                                            Toast.makeText(context, "截图失败: ${result.error}", Toast.LENGTH_SHORT).show()
+                                        }
+                                    } catch (e: Exception) {
+                                        Toast.makeText(context, "截图失败: ${e.message}", Toast.LENGTH_SHORT).show()
                                     }
-                                } catch (e: Exception) {
-                                    Toast.makeText(context, "截图失败: ${e.message}", Toast.LENGTH_SHORT).show()
                                 }
                             }
                         }
@@ -662,7 +676,7 @@ fun ToolsScreen(
                     onClick = {
                         when {
                             !a11yConnected -> {
-                                Toast.makeText(context, "请先开启无障碍服务\n设置 → 无障碍 → 晨翼Agent", Toast.LENGTH_LONG).show()
+                                Toast.makeText(context, "请先开启无障碍服务\\n设置 → 无障碍 → 晨翼Agent", Toast.LENGTH_LONG).show()
                             }
                             !screenshotAuth -> {
                                 if (activity != null) {
@@ -676,17 +690,28 @@ fun ToolsScreen(
                             else -> {
                                 scope.launch {
                                     try {
-                                        val bitmap = screenshotHelper.capture()
-                                        if (bitmap != null) {
-                                            val result = ocrEngine.recognize(bitmap)
-                                            bitmap.recycle()
-                                            if (result.success) {
-                                                Toast.makeText(context, "识别成功:\n${result.fullText.take(100)}", Toast.LENGTH_LONG).show()
+                                        // 通过 Kernel 执行截图 + OCR 工具（无障碍服务可以截取任何 App）
+                                        val screenshotResult = kernel.executeTool("screenshot", "{}")
+                                        if (screenshotResult.success && screenshotResult.response != null) {
+                                            // 解析截图路径
+                                            val pathJson = org.json.JSONObject(screenshotResult.response)
+                                            val imagePath = pathJson.getString("path")
+                                            
+                                            // 加载图片并 OCR
+                                            val bitmap = android.graphics.BitmapFactory.decodeFile(imagePath)
+                                            if (bitmap != null) {
+                                                val ocrResult = ocrEngine.recognize(bitmap)
+                                                bitmap.recycle()
+                                                if (ocrResult.success) {
+                                                    Toast.makeText(context, "识别成功:\\n${ocrResult.fullText.take(100)}", Toast.LENGTH_LONG).show()
+                                                } else {
+                                                    Toast.makeText(context, "识别失败: ${ocrResult.error}", Toast.LENGTH_SHORT).show()
+                                                }
                                             } else {
-                                                Toast.makeText(context, "识别失败: ${result.error}", Toast.LENGTH_SHORT).show()
+                                                Toast.makeText(context, "加载截图失败", Toast.LENGTH_SHORT).show()
                                             }
                                         } else {
-                                            Toast.makeText(context, "截图失败", Toast.LENGTH_SHORT).show()
+                                            Toast.makeText(context, "截图失败: ${screenshotResult.error}", Toast.LENGTH_SHORT).show()
                                         }
                                     } catch (e: Exception) {
                                         Toast.makeText(context, "OCR 失败: ${e.message}", Toast.LENGTH_SHORT).show()
