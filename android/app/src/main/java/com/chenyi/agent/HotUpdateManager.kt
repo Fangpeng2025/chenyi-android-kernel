@@ -22,6 +22,8 @@ class HotUpdateManager(private val context: Context) {
         private const val LIB_NAME = "libchenyi.so"
         private const val UPDATE_URL = "https://github.com/Fangpeng2025/chenyi-android-kernel/releases/latest/download/libchenyi.so"
         private const val VERSION_FILE = "kernel_version.txt"
+        // 国内镜像（Gitee）优先，GitHub 备用
+        private const val GITEE_API = "https://gitee.com/api/v5/repos/Fangpeng2025/chenyi-android-kernel/releases/latest"
         private const val GITHUB_API = "https://api.github.com/repos/Fangpeng2025/chenyi-android-kernel/releases/latest"
     }
     
@@ -160,9 +162,23 @@ class HotUpdateManager(private val context: Context) {
     }
     
     /**
-     * 获取远程版本（带超时）
+     * 获取远程版本（带超时）- 优先使用国内镜像
      */
     private fun getRemoteVersionWithTimeout(): String {
+        // 优先尝试 Gitee（国内镜像）
+        try {
+            val giteeUrl = URL("https://gitee.com/Fangpeng2025/chenyi-android-kernel/raw/master/version.txt")
+            val connection = giteeUrl.openConnection() as HttpURLConnection
+            connection.connectTimeout = 5000 // 5秒连接超时
+            connection.readTimeout = 5000 // 5秒读取超时
+            val version = connection.inputStream.use { it.bufferedReader().readText().trim() }
+            Log.d(TAG, "从 Gitee 获取版本: $version")
+            return version
+        } catch (e: Exception) {
+            Log.w(TAG, "Gitee 获取失败: ${e.message}，尝试 GitHub")
+        }
+        
+        // 备用：GitHub
         return try {
             val url = URL("https://github.com/Fangpeng2025/chenyi-android-kernel/releases/latest/download/version.txt")
             val connection = url.openConnection() as HttpURLConnection
@@ -229,7 +245,7 @@ class HotUpdateManager(private val context: Context) {
     // ==================== APK 自动更新功能 ====================
     
     /**
-     * 检查 APK 更新（从 GitHub Release）
+     * 检查 APK 更新（优先使用国内镜像）
      */
     fun checkApkUpdate(callback: (Boolean, String, String?, String?) -> Unit) {
         executor.execute {
@@ -240,29 +256,50 @@ class HotUpdateManager(private val context: Context) {
                 val currentVersion = getAppVersion()
                 Log.d(TAG, "当前 APK 版本: $currentVersion")
                 
-                // 从 GitHub API 获取最新 Release 信息
-                val connection = URL(GITHUB_API).openConnection() as HttpURLConnection
-                connection.connectTimeout = 10000
-                connection.readTimeout = 10000
-                connection.setRequestProperty("Accept", "application/vnd.github.v3+json")
+                // 优先从 Gitee API 获取最新 Release 信息
+                var response: String? = null
+                var tagName: String? = null
+                var releaseName: String? = null
+                var releaseNotes: String? = null
+                var apkUrl: String? = null
                 
-                val response = connection.inputStream.use { it.bufferedReader().readText() }
-                Log.d(TAG, "GitHub API 响应: $response")
+                try {
+                    val giteeConnection = URL(GITEE_API).openConnection() as HttpURLConnection
+                    giteeConnection.connectTimeout = 5000
+                    giteeConnection.readTimeout = 5000
+                    response = giteeConnection.inputStream.use { it.bufferedReader().readText() }
+                    Log.d(TAG, "Gitee API 响应: $response")
+                    
+                    tagName = extractJsonValue(response, "tag_name")
+                    releaseName = extractJsonValue(response, "name")
+                    releaseNotes = extractJsonValue(response, "body")
+                    Log.d(TAG, "从 Gitee 获取版本: $tagName")
+                } catch (e: Exception) {
+                    Log.w(TAG, "Gitee API 失败: ${e.message}，尝试 GitHub")
+                }
                 
-                // 解析 JSON（简单解析，不使用 Gson）
-                val tagName = extractJsonValue(response, "tag_name")
-                val releaseName = extractJsonValue(response, "name")
-                val releaseNotes = extractJsonValue(response, "body")
-                
-                Log.d(TAG, "远程版本: $tagName")
+                // 如果 Gitee 失败，尝试 GitHub
+                if (tagName.isNullOrEmpty()) {
+                    val connection = URL(GITHUB_API).openConnection() as HttpURLConnection
+                    connection.connectTimeout = 10000
+                    connection.readTimeout = 10000
+                    connection.setRequestProperty("Accept", "application/vnd.github.v3+json")
+                    
+                    response = connection.inputStream.use { it.bufferedReader().readText() }
+                    Log.d(TAG, "GitHub API 响应: $response")
+                    
+                    tagName = extractJsonValue(response, "tag_name")
+                    releaseName = extractJsonValue(response, "name")
+                    releaseNotes = extractJsonValue(response, "body")
+                    Log.d(TAG, "从 GitHub 获取版本: $tagName")
+                }
                 
                 val hasUpdate = currentVersion != tagName && !tagName.isNullOrEmpty()
                 
                 // 获取 APK 下载链接
-                val apkUrl = if (hasUpdate) {
-                    // 从 assets 中查找 APK
-                    extractApkUrl(response)
-                } else null
+                if (hasUpdate && response != null) {
+                    apkUrl = extractApkUrl(response)
+                }
                 
                 Handler(Looper.getMainLooper()).post {
                     callback(hasUpdate, tagName ?: "未知版本", apkUrl, releaseNotes)
