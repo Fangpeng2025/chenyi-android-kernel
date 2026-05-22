@@ -303,10 +303,10 @@ class HotUpdateManager(private val context: Context) {
                     val response = connection.inputStream.use { it.bufferedReader().readText() }
                     Log.d(TAG, "阿里云响应: $response")
                     
-                    tagName = extractJsonValue(response, "version")
-                    releaseNotes = extractJsonValue(response, "notes")
-                    apkUrl = "$ALIYUN_BASE_URL/chenyi-agent-$tagName.apk"
-                    Log.d(TAG, "从阿里云获取版本: $tagName")
+                    tagName = extractJsonValue(response, "versionName")
+                    releaseNotes = extractJsonValue(response, "updateLog")
+                    apkUrl = extractJsonValue(response, "apkUrl")
+                    Log.d(TAG, "从阿里云获取版本: $tagName, APK: $apkUrl")
                 } catch (e: Exception) {
                     Log.w(TAG, "阿里云获取失败: ${e.message}，尝试 Gitee")
                 }
