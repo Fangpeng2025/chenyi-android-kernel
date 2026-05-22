@@ -641,7 +641,7 @@ fun ToolsScreen(
                                 scope.launch {
                                     try {
                                         // 通过 Kernel 执行截图工具（无障碍服务可以截取任何 App）
-                                        val result = kernel.executeTool("screenshot", "{}")
+                                        val result = kernel.executeToolJson("screenshot", "{}")
                                         if (result.success && result.response != null) {
                                             Toast.makeText(context, "截图成功\\n保存至: ${result.response}", Toast.LENGTH_LONG).show()
                                         } else {
@@ -691,7 +691,7 @@ fun ToolsScreen(
                                 scope.launch {
                                     try {
                                         // 通过 Kernel 执行截图 + OCR 工具（无障碍服务可以截取任何 App）
-                                        val screenshotResult = kernel.executeTool("screenshot", "{}")
+                                        val screenshotResult = kernel.executeToolJson("screenshot", "{}")
                                         if (screenshotResult.success && screenshotResult.response != null) {
                                             // 解析截图路径
                                             val pathJson = org.json.JSONObject(screenshotResult.response)
