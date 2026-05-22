@@ -144,6 +144,14 @@ impl LlmClient {
         Ok(Self { config, client })
     }
     
+    /// 更新配置（API Key, Base URL, Model）
+    pub fn update_config(&mut self, api_key: &str, base_url: &str, model: &str) {
+        self.config.api_key = api_key.to_string();
+        self.config.endpoint = base_url.to_string();
+        self.config.model = model.to_string();
+        log::info!("[LLM] 配置已更新 - endpoint: {}, model: {}", self.config.endpoint, self.config.model);
+    }
+    
     /// 发送聊天请求（带工具支持和自动重试）
     pub async fn chat_with_tools(&self, messages: &[ChatMessage], tools: Vec<ToolDefinition>) -> Result<ResponseMessage> {
         const MAX_RETRIES: usize = 3;

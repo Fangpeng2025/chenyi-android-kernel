@@ -45,6 +45,7 @@ class Kernel(private val context: Context) {
     private external fun nativeClearHistory(): Boolean
     private external fun nativeSubmitToolResults(toolResultsJson: String): String
     private external fun nativeGetKernelVersion(): String
+    private external fun nativeSetApiKey(apiKey: String, baseUrl: String, model: String): Boolean
 
     // 工具执行回调（由 AccessibilityService 设置）
     private var toolCallback: ((String, String) -> String)? = null
@@ -80,6 +81,24 @@ class Kernel(private val context: Context) {
     fun setToolCallback(callback: (String, String) -> String) {
         this.toolCallback = callback
         Log.d(TAG, "工具回调已设置（已弃用）")
+    }
+    
+    /**
+     * 设置 API Key（必须在 init() 之后调用）
+     */
+    fun setApiKey(apiKey: String, baseUrl: String = "https://oneapi.xintiandi.online/v1", model: String = "glm-5"): Boolean {
+        if (!initialized.get()) {
+            Log.e(TAG, "内核未初始化，无法设置 API Key")
+            return false
+        }
+        
+        val success = nativeSetApiKey(apiKey, baseUrl, model)
+        if (success) {
+            Log.d(TAG, "API Key 设置成功")
+        } else {
+            Log.e(TAG, "API Key 设置失败")
+        }
+        return success
     }
     
     /**

@@ -21,6 +21,49 @@ fn get_runtime() -> &'static Runtime {
     RUNTIME.get_or_init(|| Runtime::new().expect("Failed to create tokio runtime"))
 }
 
+/// 设置 API Key 和 Base URL
+#[no_mangle]
+pub extern "system" fn Java_com_chenyi_agent_Kernel_nativeSetApiKey(
+    mut env: JNIEnv,
+    _class: JClass,
+    api_key: JString,
+    base_url: JString,
+    model: JString,
+) -> jboolean {
+    let api_key: String = match env.get_string(&api_key) {
+        Ok(s) => s.into(),
+        Err(_) => {
+            log::error!("[JNI] 获取 API Key 失败");
+            return false as jboolean;
+        }
+    };
+    
+    let base_url: String = match env.get_string(&base_url) {
+        Ok(s) => s.into(),
+        Err(_) => "https://oneapi.xintiandi.online/v1".to_string(),
+    };
+    
+    let model: String = match env.get_string(&model) {
+        Ok(s) => s.into(),
+        Err(_) => "glm-5".to_string(),
+    };
+    
+    log::info!("[JNI] 设置 API Key: {}..., Base URL: {}, Model: {}", api_key.chars().take(10).collect::<String>(), base_url, model);
+    
+    // 获取内核
+    let cell = KERNEL.get_or_init(|| Mutex::new(None));
+    let mut guard = cell.lock();
+    
+    if let Some(kernel) = guard.as_mut() {
+        kernel.llm.update_config(&api_key, &base_url, &model);
+        log::info!("[JNI] API Key 已更新");
+        true as jboolean
+    } else {
+        log::error!("[JNI] 错误: 内核未初始化，无法设置 API Key");
+        false as jboolean
+    }
+}
+
 /// 初始化内核
 #[no_mangle]
 pub extern "system" fn Java_com_chenyi_agent_Kernel_nativeInit(

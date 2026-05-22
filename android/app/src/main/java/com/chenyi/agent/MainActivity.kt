@@ -73,6 +73,14 @@ class MainActivity : ComponentActivity() {
         
         kernel = Kernel(this)
         val initialized = kernel.init()
+        
+        // 如果有保存的 API Key，立即设置到内核
+        val savedApiKey = prefs.getString("api_key", "") ?: ""
+        if (savedApiKey.isNotBlank() && initialized) {
+            kernel.setApiKey(savedApiKey)
+            Log.d("MainActivity", "已从 SharedPreferences 加载 API Key")
+        }
+        
         screenshotManager = ScreenshotManager(this)
         screenshotManager.init()
         ocrEngine = OcrEngine(this)
@@ -1165,6 +1173,8 @@ fun SettingsScreen(
                             modelName = modelName
                         )
                         kernel.updateConfig(config)
+                        // 同时更新 Rust 内核的 API Key
+                        kernel.setApiKey(tempApiKey, apiEndpoint, modelName)
                         Toast.makeText(context, "API Key 已保存", Toast.LENGTH_SHORT).show()
                         showApiKeyEditor = false
                     }
