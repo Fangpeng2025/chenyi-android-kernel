@@ -55,7 +55,9 @@ pub extern "system" fn Java_com_chenyi_agent_Kernel_nativeSetApiKey(
     let mut guard = cell.lock();
     
     if let Some(kernel) = guard.as_mut() {
-        kernel.llm.update_config(&api_key, &base_url, &model);
+        // 使用 Arc::make_mut 获取可变引用
+        let llm = Arc::make_mut(&mut kernel.llm);
+        llm.update_config(&api_key, &base_url, &model);
         log::info!("[JNI] API Key 已更新");
         true as jboolean
     } else {
