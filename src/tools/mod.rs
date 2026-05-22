@@ -187,6 +187,17 @@ impl ToolRegistry {
         });
     }
     
+    /// 注册 MCP 工具（Hermes 风格）
+    pub fn register_mcp_tool(&mut self, prefixed_name: String, mcp_tool: crate::mcp::McpTool) {
+        let tool_name = prefixed_name.clone();
+        self.tools.insert(prefixed_name.clone(), Tool {
+            name: tool_name,
+            description: mcp_tool.description,
+            parameters: mcp_tool.input_schema,
+        });
+        log::info!("[Tools] 已注册 MCP 工具: {}", prefixed_name);
+    }
+    
     /// 执行工具
     pub fn execute(&self, name: &str, params: &str) -> Result<serde_json::Value> {
         log::info!("[Tools] 执行工具: {} 参数: {}", name, params);

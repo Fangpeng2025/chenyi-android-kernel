@@ -28,6 +28,9 @@ pub mod memory;
 pub mod llm;
 pub mod storage;
 pub mod tools;
+pub mod skills;  // 技能系统（复刻 Hermes）
+pub mod mcp;     // MCP 协议（复刻 Hermes）
+pub mod config;  // 配置系统（复刻 Hermes）
 pub mod types;
 
 #[cfg(feature = "android")]

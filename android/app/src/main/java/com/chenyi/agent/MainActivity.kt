@@ -942,7 +942,7 @@ fun SettingsScreen(
 
         Spacer(modifier = Modifier.height(16.dp))
 
-// 热更新组
+// 更新管理组（微信风格卡片）
         Surface(
             modifier = Modifier.fillMaxWidth(),
             color = Color.White
@@ -965,10 +965,10 @@ fun SettingsScreen(
                     }
                 )
                 HorizontalDivider(color = Color(0xFFE5E5E5), thickness = 0.5.dp)
-                // APK 更新
+                // APK 更新（显示当前版本）
                 WeChatSettingItem(
                     title = "应用更新",
-                    subtitle = "检查并安装最新版本 APK",
+                    subtitle = "当前版本: ${BuildConfig.VERSION_NAME} - 点击检查更新",
                     onClick = {
                         Toast.makeText(context, "正在检查应用更新...", Toast.LENGTH_SHORT).show()
                         hotUpdateManager.checkApkUpdate { hasUpdate, version, url, notes ->
@@ -985,7 +985,40 @@ fun SettingsScreen(
                 )
             }
         }
-    }
+        
+        Spacer(modifier = Modifier.height(16.dp))
+        
+        // 关于信息
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            color = Color.White
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Text(
+                    text = "晨翼Agent",
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color(0xFF07C160)
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = "版本: ${BuildConfig.VERSION_NAME}",
+                    fontSize = 14.sp,
+                    color = Color.Gray
+                )
+                Text(
+                    text = "内核: Rust v${kernel.getKernelVersion()}",
+                    fontSize = 14.sp,
+                    color = Color.Gray
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = "官网: xintiandi.online",
+                    fontSize = 14.sp,
+                    color = Color(0xFF07C160)
+                )
+            }
+        }
 
     // 内核更新确认对话框
     if (showUpdateDialog) {

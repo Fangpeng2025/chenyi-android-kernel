@@ -44,6 +44,7 @@ class Kernel(private val context: Context) {
     private external fun nativeUpdateConfig(configJson: String): Boolean
     private external fun nativeClearHistory(): Boolean
     private external fun nativeSubmitToolResults(toolResultsJson: String): String
+    private external fun nativeGetKernelVersion(): String
 
     // 工具执行回调（由 AccessibilityService 设置）
     private var toolCallback: ((String, String) -> String)? = null
@@ -233,6 +234,18 @@ class Kernel(private val context: Context) {
     fun getStatus(): Status {
         val json = nativeGetStatus()
         return Status.fromJson(json)
+    }
+    
+    /**
+     * 获取内核版本
+     */
+    fun getKernelVersion(): String {
+        return try {
+            nativeGetKernelVersion()
+        } catch (e: Exception) {
+            Log.e(TAG, "获取内核版本失败", e)
+            "unknown"
+        }
     }
     
     /**

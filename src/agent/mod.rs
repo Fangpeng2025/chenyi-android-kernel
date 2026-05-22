@@ -1,5 +1,7 @@
 //! Agent 内核
 
+pub mod orchestrator;
+
 use crate::types::{KernelConfig, Result, Error};
 use crate::memory::MemoryEngine;
 use crate::llm::{LlmClient, ChatMessage, ToolCall};

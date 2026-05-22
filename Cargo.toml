@@ -16,11 +16,12 @@ android = ["jni", "ndk"]
 
 [dependencies]
 # 异步运行时
-tokio = { version = "1", features = ["rt-multi-thread", "sync", "time", "macros"] }
+tokio = { version = "1", features = ["rt-multi-thread", "sync", "time", "macros", "process"] }
 
 # 序列化
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+serde_yaml = "0.9"
 
 # 并发
 parking_lot = "0.12"
@@ -39,7 +40,7 @@ tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter"] }
 rusqlite = { version = "0.37", features = ["bundled"] }
 
 # HTTP 客户端（用于 LLM API）
-reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "native-tls"] }
 
 # Android JNI
 jni = { version = "0.21", optional = true }
@@ -47,6 +48,12 @@ ndk = { version = "0.9", optional = true }
 
 # 时间处理
 chrono = { version = "0.4", features = ["serde"] }
+
+# 文件遍历（用于技能加载）
+walkdir = "2"
+
+# 目录路径
+dirs = "5"
 
 # UUID
 uuid = { version = "1", features = ["v4"] }

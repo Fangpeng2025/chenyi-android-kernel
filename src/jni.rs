@@ -221,6 +221,23 @@ pub extern "system" fn Java_com_chenyi_agent_Kernel_nativeGetStatus(
     }
 }
 
+/// 获取内核版本
+#[no_mangle]
+pub extern "system" fn Java_com_chenyi_agent_Kernel_nativeGetKernelVersion(
+    mut env: JNIEnv,
+    _class: JClass,
+) -> jstring {
+    // 返回版本号（从 Cargo.toml 读取）
+    let version = env!("CARGO_PKG_VERSION");
+    match env.new_string(version) {
+        Ok(jstr) => jstr.into_raw(),
+        Err(_) => match env.new_string("unknown") {
+            Ok(jstr) => jstr.into_raw(),
+            Err(_) => std::ptr::null_mut(),
+        },
+    }
+}
+
 /// 清除会话历史
 #[no_mangle]
 pub extern "system" fn Java_com_chenyi_agent_Kernel_nativeClearHistory(
