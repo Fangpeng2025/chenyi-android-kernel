@@ -602,7 +602,7 @@ fun ToolsScreen(
             // OCR 工具
             item {
                 val a11yService = ChenyiAccessibilityService.getInstance()
-                val a11yConnected = a11yService?.isConnected() == true
+                val a11yConnected = a11yService != null
                 val screenshotAuth = screenshotHelper.isAuthorized()
                 val ocrReady = ocrEngine.isInitialized()
                 
