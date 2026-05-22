@@ -23,7 +23,7 @@ class HotUpdateManager(private val context: Context) {
         private const val VERSION_FILE = "kernel_version.txt"
         
         // 更新服务器配置（优先级：阿里云 > Gitee > GitHub）
-        private const val ALIYUN_BASE_URL = "https://your-aliyun-server.com/chenyi-agent"  // TODO: 替换为实际地址
+        private const val ALIYUN_BASE_URL = "https://oneapi.xintiandi.online/chenyi-agent"
         private const val GITEE_API = "https://gitee.com/api/v5/repos/Fangpeng2025/chenyi-android-kernel/releases/latest"
         private const val GITHUB_API = "https://api.github.com/repos/Fangpeng2025/chenyi-android-kernel/releases/latest"
         
