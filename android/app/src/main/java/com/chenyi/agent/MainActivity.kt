@@ -203,8 +203,7 @@ fun WeChatStyleApp(
             when (selectedTab) {
                 0 -> ChatScreen(kernel, prefs, sessionManager, kernelInitialized)
                 1 -> ToolsScreen(screenshotManager, ocrEngine, kernel, screenshotHelper)
-                2 -> SettingsScreen(prefs, kernel, screenshotManager, screenshotHelper)
-                3 -> ProfileScreen(kernelInitialized, screenshotManager, screenshotHelper)
+                2 -> SettingsScreen(prefs, kernel, screenshotManager, screenshotHelper, kernelInitialized)
             }
         }
     }
@@ -251,9 +250,8 @@ fun WeChatBottomBar(
 ) {
     val tabs = listOf(
         "聊天" to Icons.Default.Chat,
-        "工具" to Icons.Default.Build,
-        "设置" to Icons.Default.Settings,
-        "我" to Icons.Default.Person
+        "技能" to Icons.Default.AutoAwesome,
+        "设置" to Icons.Default.Settings
     )
 
     Surface(
@@ -795,7 +793,8 @@ fun SettingsScreen(
     prefs: SharedPreferences,
     kernel: Kernel,
     screenshotManager: ScreenshotManager,
-    screenshotHelper: ScreenshotHelper
+    screenshotHelper: ScreenshotHelper,
+    kernelInitialized: Boolean
 ) {
     val context = LocalContext.current
     val activity = context as? ComponentActivity
@@ -865,17 +864,40 @@ fun SettingsScreen(
             .fillMaxSize()
             .background(Color(0xFFEDEDED))
     ) {
-        // 标题
+        // 头像和名称（合并"我"页面）
         Surface(
             modifier = Modifier.fillMaxWidth(),
             color = Color.White
         ) {
-            Text(
-                text = "设置",
-                modifier = Modifier.padding(16.dp),
-                fontSize = 20.sp,
-                fontWeight = FontWeight.Bold
-            )
+            Column(
+                modifier = Modifier.padding(24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Surface(
+                    modifier = Modifier.size(80.dp),
+                    color = Color(0xFF07C160),
+                    shape = CircleShape
+                ) {
+                    Icon(
+                        Icons.Default.SmartToy,
+                        contentDescription = "头像",
+                        tint = Color.White,
+                        modifier = Modifier.padding(20.dp)
+                    )
+                }
+                Spacer(modifier = Modifier.height(16.dp))
+                Text(
+                    text = "晨翼 Agent",
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.Bold
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = "版本 ${BuildConfig.VERSION_NAME}",
+                    fontSize = 14.sp,
+                    color = Color.Gray
+                )
+            }
         }
 
         Spacer(modifier = Modifier.height(16.dp))
@@ -917,12 +939,18 @@ fun SettingsScreen(
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // 权限配置组
+        // 状态信息（合并"我"页面的内核状态）
         Surface(
             modifier = Modifier.fillMaxWidth(),
             color = Color.White
         ) {
             Column {
+                WeChatSettingItem(
+                    title = "内核状态",
+                    subtitle = if (kernelInitialized) "正常运行" else "未初始化",
+                    onClick = {}
+                )
+                HorizontalDivider(color = Color(0xFFE5E5E5), thickness = 0.5.dp)
                 WeChatSettingItem(
                     title = "无障碍服务",
                     subtitle = if (ChenyiAccessibilityService.getInstance() != null) "已开启" else "未开启 - 点击开启",
@@ -930,19 +958,6 @@ fun SettingsScreen(
                         Toast.makeText(context, "请开启无障碍服务", Toast.LENGTH_SHORT).show()
                         val intent = android.content.Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS)
                         context.startActivity(intent)
-                    }
-                )
-                HorizontalDivider(color = Color(0xFFE5E5E5), thickness = 0.5.dp)
-                WeChatSettingItem(
-                    title = "截图权限",
-                    subtitle = if (screenshotHelper.isAuthorized()) "已授权" else "未授权 - 点击授权",
-                    onClick = {
-                        if (activity != null) {
-                            Toast.makeText(context, "请授权截图权限", Toast.LENGTH_SHORT).show()
-                            screenshotHelper.requestPermission(activity)
-                        } else {
-                            Toast.makeText(context, "无法获取Activity，请从主界面操作", Toast.LENGTH_SHORT).show()
-                        }
                     }
                 )
             }
@@ -1302,100 +1317,6 @@ fun WeChatSettingItem(
                 tint = Color.Gray,
                 modifier = Modifier.size(20.dp)
             )
-        }
-    }
 }
-
-/**
- * 个人中心界面
- */
-@Composable
-fun ProfileScreen(
-    kernelInitialized: Boolean,
-    screenshotManager: ScreenshotManager,
-    screenshotHelper: ScreenshotHelper
-) {
-    val context = LocalContext.current
-    val activity = context as? ComponentActivity
-
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Color(0xFFEDEDED))
-    ) {
-        // 头像和名称
-        Surface(
-            modifier = Modifier.fillMaxWidth(),
-            color = Color.White
-        ) {
-            Column(
-                modifier = Modifier.padding(24.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                Surface(
-                    modifier = Modifier.size(80.dp),
-                    color = Color(0xFF07C160),
-                    shape = CircleShape
-                ) {
-                    Icon(
-                        Icons.Default.SmartToy,
-                        contentDescription = "头像",
-                        tint = Color.White,
-                        modifier = Modifier.padding(20.dp)
-                    )
-                }
-                Spacer(modifier = Modifier.height(16.dp))
-                Text(
-                    text = "晨翼 Agent",
-                    fontSize = 20.sp,
-                    fontWeight = FontWeight.Bold
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(
-                    text = "版本 ${BuildConfig.VERSION_NAME}",
-                    fontSize = 14.sp,
-                    color = Color.Gray
-                )
-            }
-        }
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        // 状态信息
-        Surface(
-            modifier = Modifier.fillMaxWidth(),
-            color = Color.White
-        ) {
-            Column {
-                WeChatSettingItem(
-                    title = "内核状态",
-                    subtitle = if (kernelInitialized) "正常运行" else "未初始化",
-                    onClick = {}
-                )
-                HorizontalDivider(color = Color(0xFFE5E5E5), thickness = 0.5.dp)
-                WeChatSettingItem(
-                    title = "无障碍服务",
-                    subtitle = if (ChenyiAccessibilityService.getInstance() != null) "已开启" else "未开启",
-                    onClick = {
-                        Toast.makeText(context, "请开启无障碍服务", Toast.LENGTH_SHORT).show()
-                        val intent = android.content.Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS)
-                        context.startActivity(intent)
-                    }
-                )
-                HorizontalDivider(color = Color(0xFFE5E5E5), thickness = 0.5.dp)
-                WeChatSettingItem(
-                    title = "截图权限",
-                    subtitle = if (screenshotHelper.isAuthorized()) "已授权" else "未授权",
-                    onClick = {
-                        if (activity != null) {
-                            Toast.makeText(context, "请授权截图权限", Toast.LENGTH_SHORT).show()
-                            screenshotHelper.requestPermission(activity)
-                        } else {
-                            Toast.makeText(context, "无法获取Activity，请从主界面操作", Toast.LENGTH_SHORT).show()
-                        }
-                    }
-                )
-            }
-        }
     }
 }
