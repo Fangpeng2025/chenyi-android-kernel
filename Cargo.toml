@@ -39,8 +39,8 @@ tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter"] }
 # 存储
 rusqlite = { version = "0.37", features = ["bundled"] }
 
-# HTTP 客户端（用于 LLM API）
-reqwest = { version = "0.12", default-features = false, features = ["json", "native-tls"] }
+# HTTP 客户端（用于 LLM API）- 使用 rustls 纯 Rust TLS
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 
 # Android JNI
 jni = { version = "0.21", optional = true }
