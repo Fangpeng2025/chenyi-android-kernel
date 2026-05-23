@@ -192,8 +192,10 @@ jobs:
           scp version.json \
             root@8.147.232.175:/www/wwwroot/xintiandi.online/files/chenyi-agent/version.json
           
-          # 更新官网版本号（从 version.json 读取）
-          ssh root@8.147.232.175 "sed -i 's/当前版本: v[0-9.]* |/当前版本: v${VERSION_NAME} |/' /www/wwwroot/xintiandi.online/official/index.html"
+          # 上传官网前端（自动从 version.json 读取版本号）
+          ssh root@8.147.232.175 "mkdir -p /www/wwwroot/xintiandi.online/official/"
+          scp official/index.html \
+            root@8.147.232.175:/www/wwwroot/xintiandi.online/official/index.html
           
           echo "✅ 部署完成"
           echo "版本: v${VERSION_NAME} (code: ${VERSION_CODE})"
