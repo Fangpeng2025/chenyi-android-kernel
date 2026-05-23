@@ -1,5 +1,5 @@
 {
-  "versionCode": 11,
+  "versionCode": 20,
   "versionName": "1.0.11",
   "apkUrl": "https://oneapi.xintiandi.online/chenyi-agent/chenyi-agent-latest.apk",
   "updateLog": "## v1.0.11 更新\n\n### 新功能\n- ✅ Peekaboo 完整技能集成\n- ✅ 屏幕控制：截图\n- ✅ OCR 识别：文字识别、查找文本、点击文本\n- ✅ 输入控制：点击坐标、滑动、输入文本、按键操作\n- ✅ 应用管理：打开应用、查看当前应用\n\n### 优化\n- ✅ 技能页面分组显示\n- ✅ 统一的输入对话框\n- ✅ 微信风格 UI\n\n官网: https://xintiandi.online",

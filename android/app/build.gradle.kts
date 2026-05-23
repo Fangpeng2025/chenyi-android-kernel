@@ -13,7 +13,7 @@ android {
         applicationId = "com.chenyi.agent"
         minSdk = 26
         targetSdk = 34
-    versionCode = 11
+    versionCode = 20
     versionName = "1.0.11"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
