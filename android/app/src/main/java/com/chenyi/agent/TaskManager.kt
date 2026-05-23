@@ -168,19 +168,8 @@ class TaskManager(private val context: Context) {
      * 执行单个步骤
      */
     private fun executeStep(step: TaskStep, service: ChenyiAccessibilityService): Result {
-        val paramsJson = JSONObject(step.params).toString()
-        val resultStr = service.executeTool(step.tool, paramsJson)
-        // 将 String 结果转换为 Result 对象
-        return try {
-            val json = JSONObject(resultStr)
-            if (json.optBoolean("success", false)) {
-                Result.ok(mapOf("data" to json.optString("data", "")))
-            } else {
-                Result.error(json.optString("error", "执行失败"))
-            }
-        } catch (e: Exception) {
-            Result.error(resultStr)
-        }
+        val params = JSONObject(step.params)
+        return service.executeTool(step.tool, params)
     }
     
     /**

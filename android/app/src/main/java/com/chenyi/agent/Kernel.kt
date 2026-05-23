@@ -182,10 +182,11 @@ class Kernel(private val context: Context) {
                         val toolId = toolCall.getString("id")
                         val function = toolCall.getJSONObject("function")
                         val toolName = function.getString("name")
-                        val toolArgs = function.getString("arguments")
+val toolArgs = function.getString("arguments")
                         
                         Log.d(TAG, "执行工具: $toolName ($toolArgs)")
-                        val toolResult = service.executeTool(toolName, toolArgs)
+                        val toolArgsJson = org.json.JSONObject(toolArgs)
+                        val toolResult = service.executeTool(toolName, toolArgsJson)
                         
                         // 添加到结果数组
                         val resultObj = org.json.JSONObject()
@@ -232,12 +233,12 @@ class Kernel(private val context: Context) {
     /**
      * 执行工具（JSON 参数）
      */
-    fun executeToolJson(tool: String, paramsJson: String): Result {
+fun executeToolJson(tool: String, paramsJson: String): Result {
         return try {
             val service = ChenyiAccessibilityService.getInstance()
             if (service != null) {
-                val json = service.executeTool(tool, paramsJson)
-                Result.fromJson(json)
+                val params = org.json.JSONObject(paramsJson)
+                service.executeTool(tool, params)
             } else {
                 Result.error("无障碍服务未连接")
             }
