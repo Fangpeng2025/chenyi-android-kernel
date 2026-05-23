@@ -1,7 +1,7 @@
 {
-  "versionCode": 10013,
-  "versionName": "1.0.13",
+  "versionCode": 10014,
+  "versionName": "1.0.14",
   "apkUrl": "https://oneapi.xintiandi.online/chenyi-agent/chenyi-agent-latest.apk",
-  "updateLog": "## v1.0.13 更新\n\n### 修复\n- ✅ 修复聊天功能发送消息无响应问题\n- ✅ 修复协程作用域被取消导致消息丢失\n- ✅ 移除截图权限检查，只需无障碍服务\n\n### 注意\n- ⚠️ 聊天功能需要先配置 API Key（设置页面）\n\n官网: https://xintiandi.online",
+  "updateLog": "## v1.0.14 更新\n\n### 新增\n- ✅ 使用 RapidOCR4j-Android（内置模型，无需下载）\n- ✅ OCR 即开即用，无初始化等待\n\n### 修复\n- ✅ 修复聊天功能发送消息无响应问题\n- ✅ 移除截图权限检查，只需无障碍服务\n\n### 注意\n- ⚠️ 聊天功能需要先配置 API Key（设置页面）\n\n官网: https://xintiandi.online",
   "forceUpdate": false
 }

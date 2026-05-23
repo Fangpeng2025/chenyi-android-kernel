@@ -13,8 +13,8 @@ android {
         applicationId = "com.chenyi.agent"
         minSdk = 26
         targetSdk = 34
-versionCode = 10013
-        versionName = "1.0.13"
+versionCode = 10014
+        versionName = "1.0.14"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
@@ -112,8 +112,11 @@ dependencies {
     // Coroutines
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
 
-    // JSON
+// JSON
     implementation("org.json:json:20240303")
+    
+    // RapidOCR4j Android (中文识别)
+    implementation("io.github.hzkitty:rapidocr4j-android:1.0.0")
 
     // Testing
     testImplementation("junit:junit:4.13.2")
