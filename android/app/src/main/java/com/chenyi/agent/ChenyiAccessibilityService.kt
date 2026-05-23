@@ -2,6 +2,7 @@ package com.chenyi.agent
 
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.GestureDescription
+import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.Path
 import android.graphics.Rect
@@ -756,8 +757,8 @@ class ChenyiAccessibilityService : AccessibilityService() {
             val latch = CountDownLatch(1)
             var resultBitmap: Bitmap? = null
             
-            takeScreenshot(android.view.Display.DEFAULT_DISPLAY, mainExecutor, object : TakeScreenshotCallback {
-                override fun onSuccess(screenshot: ScreenshotResult) {
+            takeScreenshot(android.view.Display.DEFAULT_DISPLAY, mainExecutor, object : AccessibilityService.TakeScreenshotCallback {
+                override fun onSuccess(screenshot: AccessibilityService.ScreenshotResult) {
                     val hwBitmap = Bitmap.wrapHardwareBuffer(
                         screenshot.hardwareBuffer, screenshot.colorSpace
                     )
@@ -767,7 +768,7 @@ class ChenyiAccessibilityService : AccessibilityService() {
                     latch.countDown()
                 }
                 
-                override fun onError(errorCode: Int) {
+                override fun onFailure(errorCode: Int) {
                     latch.countDown()
                 }
             })
@@ -815,18 +816,5 @@ class ChenyiAccessibilityService : AccessibilityService() {
         } catch (e: Exception) {
             Result.error("获取屏幕尺寸失败: ${e.message}")
         }
-    }
-}
-
-// ============ 结果类 ============
-
-data class Result(
-    val success: Boolean,
-    val data: JSONObject? = null,
-    val error: String? = null
-) {
-    companion object {
-        fun success(data: JSONObject) = Result(true, data, null)
-        fun error(msg: String) = Result(false, null, msg)
     }
 }
