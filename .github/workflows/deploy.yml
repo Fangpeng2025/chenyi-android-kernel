@@ -174,14 +174,16 @@ jobs:
           chmod 600 ~/.ssh/id_rsa
           ssh-keyscan -H 8.147.232.175 >> ~/.ssh/known_hosts
           
+          # 创建目录（如果不存在）
+          ssh root@8.147.232.175 "mkdir -p /www/wwwroot/xintiandi.online/files/chenyi-agent/"
+          
           # 上传 APK 到服务器
           scp android/app/build/outputs/apk/release/app-release.apk \
-            root@8.147.232.175:/www/wwwroot/oneapi.xintiandi.online/chenyi-agent/chenyi-agent-latest.apk
+            root@8.147.232.175:/www/wwwroot/xintiandi.online/files/chenyi-agent/chenyi-agent-latest.apk
           
-          # 创建版本文件
-          echo "${{ steps.version.outputs.version }}" > version.txt
-          scp version.txt \
-            root@8.147.232.175:/www/wwwroot/oneapi.xintiandi.online/chenyi-agent/version.txt
+          # 上传 version.json
+          scp version.json \
+            root@8.147.232.175:/www/wwwroot/xintiandi.online/files/chenyi-agent/version.json
           
           echo "✅ 部署完成"
           echo "官网: https://xintiandi.online"
