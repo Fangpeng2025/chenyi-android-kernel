@@ -25,6 +25,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.core.content.FileProvider
 import androidx.compose.material3.*
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -594,11 +596,18 @@ fun ToolsScreen(
     val context = LocalContext.current
     val activity = context as? ComponentActivity
     val scope = rememberCoroutineScope()
+    
+    // 输入对话框状态
+    var showInputDialog by remember { mutableStateOf(false) }
+    var inputDialogTitle by remember { mutableStateOf("") }
+    var inputDialogHint by remember { mutableStateOf("") }
+    var inputDialogAction: suspend (String) -> Unit by remember { mutableStateOf({}) }
+    var inputValue by remember { mutableStateOf("") }
 
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color.White)
+            .background(Color(0xFFEDEDED))
     ) {
         // 标题
         Surface(
@@ -606,7 +615,7 @@ fun ToolsScreen(
             color = Color.White
         ) {
             Text(
-                text = "工具",
+                text = "Peekaboo 技能",
                 modifier = Modifier.padding(16.dp),
                 fontSize = 20.sp,
                 fontWeight = FontWeight.Bold
@@ -619,20 +628,30 @@ fun ToolsScreen(
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
-) {
-            // 截图工具
+        ) {
+            // ========== 屏幕控制组 ==========
+            item {
+                Text(
+                    text = "屏幕控制",
+                    fontSize = 14.sp,
+                    color = Color.Gray,
+                    modifier = Modifier.padding(start = 8.dp, bottom = 4.dp)
+                )
+            }
+
+            // 截图
             item {
                 val a11yService = ChenyiAccessibilityService.getInstance()
                 val a11yConnected = a11yService != null
                 val screenshotAuth = screenshotHelper.isAuthorized()
-                
+
                 WeChatToolItem(
                     icon = Icons.Default.Screenshot,
                     title = "截图",
                     subtitle = when {
                         !a11yConnected -> "❌ 无障碍服务未开启"
                         !screenshotAuth -> "⚠️ 截图权限未授权"
-                        else -> "✅ 已就绪 - 点击截图"
+                        else -> "✅ 截取当前屏幕"
                     },
                     onClick = {
                         when {
@@ -648,7 +667,6 @@ fun ToolsScreen(
                             else -> {
                                 scope.launch {
                                     try {
-                                        // 通过 Kernel 执行截图工具（无障碍服务可以截取任何 App）
                                         val result = kernel.executeToolJson("screenshot", "{}")
                                         if (result.success && result.response != null) {
                                             Toast.makeText(context, "截图成功\\n保存至: ${result.response}", Toast.LENGTH_LONG).show()
@@ -665,13 +683,23 @@ fun ToolsScreen(
                 )
             }
 
-            // OCR 工具
+            // ========== OCR 识别组 ==========
+            item {
+                Text(
+                    text = "OCR 识别",
+                    fontSize = 14.sp,
+                    color = Color.Gray,
+                    modifier = Modifier.padding(start = 8.dp, top = 8.dp, bottom = 4.dp)
+                )
+            }
+
+            // OCR 识别
             item {
                 val a11yService = ChenyiAccessibilityService.getInstance()
                 val a11yConnected = a11yService != null
                 val screenshotAuth = screenshotHelper.isAuthorized()
                 val ocrReady = ocrEngine.isInitialized()
-                
+
                 WeChatToolItem(
                     icon = Icons.Default.DocumentScanner,
                     title = "OCR 识别",
@@ -679,33 +707,29 @@ fun ToolsScreen(
                         !a11yConnected -> "❌ 无障碍服务未开启"
                         !screenshotAuth -> "⚠️ 截图权限未授权"
                         !ocrReady -> "⏳ OCR 初始化中..."
-                        else -> "✅ 已就绪 - 点击识别"
+                        else -> "✅ 识别屏幕文字"
                     },
                     onClick = {
                         when {
                             !a11yConnected -> {
-                                Toast.makeText(context, "请先开启无障碍服务\\n设置 → 无障碍 → 晨翼Agent", Toast.LENGTH_LONG).show()
+                                Toast.makeText(context, "请先开启无障碍服务", Toast.LENGTH_SHORT).show()
                             }
                             !screenshotAuth -> {
                                 if (activity != null) {
-                                    Toast.makeText(context, "请授权截图权限", Toast.LENGTH_SHORT).show()
                                     screenshotHelper.requestPermission(activity)
                                 }
                             }
                             !ocrReady -> {
-                                Toast.makeText(context, "OCR 正在初始化，请稍候...", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(context, "OCR 正在初始化...", Toast.LENGTH_SHORT).show()
                             }
                             else -> {
                                 scope.launch {
                                     try {
-                                        // 通过 Kernel 执行截图 + OCR 工具（无障碍服务可以截取任何 App）
                                         val screenshotResult = kernel.executeToolJson("screenshot", "{}")
                                         if (screenshotResult.success && screenshotResult.response != null) {
-                                            // 解析截图路径
                                             val pathJson = org.json.JSONObject(screenshotResult.response)
                                             val imagePath = pathJson.getString("path")
-                                            
-                                            // 加载图片并 OCR
+
                                             val bitmap = android.graphics.BitmapFactory.decodeFile(imagePath)
                                             if (bitmap != null) {
                                                 val ocrResult = ocrEngine.recognize(bitmap)
@@ -715,11 +739,7 @@ fun ToolsScreen(
                                                 } else {
                                                     Toast.makeText(context, "识别失败: ${ocrResult.error}", Toast.LENGTH_SHORT).show()
                                                 }
-                                            } else {
-                                                Toast.makeText(context, "加载截图失败", Toast.LENGTH_SHORT).show()
                                             }
-                                        } else {
-                                            Toast.makeText(context, "截图失败: ${screenshotResult.error}", Toast.LENGTH_SHORT).show()
                                         }
                                     } catch (e: Exception) {
                                         Toast.makeText(context, "OCR 失败: ${e.message}", Toast.LENGTH_SHORT).show()
@@ -731,18 +751,295 @@ fun ToolsScreen(
                 )
             }
 
-            // 执行 Shell
+            // 查找文本
+            item {
+                val a11yService = ChenyiAccessibilityService.getInstance()
+                val ocrReady = ocrEngine.isInitialized()
+
+                WeChatToolItem(
+                    icon = Icons.Default.Search,
+                    title = "查找文本",
+                    subtitle = if (!a11yService != null || !ocrReady) "❌ 需要无障碍服务" else "🔍 在屏幕上查找文本位置",
+                    onClick = {
+                        inputDialogTitle = "查找文本"
+                        inputDialogHint = "输入要查找的文本"
+                        inputValue = ""
+                        inputDialogAction = { text ->
+                            try {
+                                val result = kernel.executeToolJson("find_text", "{\"text\":\"$text\"}")
+                                if (result.success) {
+                                    Toast.makeText(context, "找到文本: ${result.response}", Toast.LENGTH_LONG).show()
+                                } else {
+                                    Toast.makeText(context, "未找到: ${result.error}", Toast.LENGTH_SHORT).show()
+                                }
+                            } catch (e: Exception) {
+                                Toast.makeText(context, "查找失败: ${e.message}", Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                        showInputDialog = true
+                    }
+                )
+            }
+
+            // 点击文本
             item {
                 WeChatToolItem(
-                    icon = Icons.Default.Terminal,
-                    title = "执行命令",
-                    subtitle = "执行 Shell 命令",
+                    icon = Icons.Default.TouchApp,
+                    title = "点击文本",
+                    subtitle = "👆 查找并点击指定文本",
                     onClick = {
-                        Toast.makeText(context, "功能开发中", Toast.LENGTH_SHORT).show()
+                        inputDialogTitle = "点击文本"
+                        inputDialogHint = "输入要点击的文本"
+                        inputValue = ""
+                        inputDialogAction = { text ->
+                            try {
+                                val result = kernel.executeToolJson("tap_text", "{\"text\":\"$text\"}")
+                                if (result.success) {
+                                    Toast.makeText(context, "点击成功", Toast.LENGTH_SHORT).show()
+                                } else {
+                                    Toast.makeText(context, "点击失败: ${result.error}", Toast.LENGTH_SHORT).show()
+                                }
+                            } catch (e: Exception) {
+                                Toast.makeText(context, "点击失败: ${e.message}", Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                        showInputDialog = true
+                    }
+                )
+            }
+
+            // ========== 输入控制组 ==========
+            item {
+                Text(
+                    text = "输入控制",
+                    fontSize = 14.sp,
+                    color = Color.Gray,
+                    modifier = Modifier.padding(start = 8.dp, top = 8.dp, bottom = 4.dp)
+                )
+            }
+
+            // 点击坐标
+            item {
+                WeChatToolItem(
+                    icon = Icons.Default.AddLocation,
+                    title = "点击坐标",
+                    subtitle = "📍 点击屏幕指定位置",
+                    onClick = {
+                        inputDialogTitle = "点击坐标"
+                        inputDialogHint = "格式: x,y (例如: 500,1000)"
+                        inputValue = ""
+                        inputDialogAction = { input ->
+                            try {
+                                val parts = input.split(",")
+                                if (parts.size == 2) {
+                                    val x = parts[0].trim().toInt()
+                                    val y = parts[1].trim().toInt()
+                                    val result = kernel.executeToolJson("tap", "{\"x\":$x,\"y\":$y}")
+                                    if (result.success) {
+                                        Toast.makeText(context, "点击成功 ($x,$y)", Toast.LENGTH_SHORT).show()
+                                    } else {
+                                        Toast.makeText(context, "点击失败: ${result.error}", Toast.LENGTH_SHORT).show()
+                                    }
+                                } else {
+                                    Toast.makeText(context, "格式错误，请输入: x,y", Toast.LENGTH_SHORT).show()
+                                }
+                            } catch (e: Exception) {
+                                Toast.makeText(context, "输入错误: ${e.message}", Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                        showInputDialog = true
+                    }
+                )
+            }
+
+            // 滑动
+            item {
+                WeChatToolItem(
+                    icon = Icons.Default.Swipe,
+                    title = "滑动屏幕",
+                    subtitle = "👆 从起点滑动到终点",
+                    onClick = {
+                        inputDialogTitle = "滑动屏幕"
+                        inputDialogHint = "格式: x1,y1,x2,y2 (例如: 500,1500,500,500)"
+                        inputValue = ""
+                        inputDialogAction = { input ->
+                            try {
+                                val parts = input.split(",")
+                                if (parts.size == 4) {
+                                    val x1 = parts[0].trim().toInt()
+                                    val y1 = parts[1].trim().toInt()
+                                    val x2 = parts[2].trim().toInt()
+                                    val y2 = parts[3].trim().toInt()
+                                    val result = kernel.executeToolJson("swipe", 
+                                        "{\"start_x\":$x1,\"start_y\":$y1,\"end_x\":$x2,\"end_y\":$y2,\"duration\":300}")
+                                    if (result.success) {
+                                        Toast.makeText(context, "滑动成功", Toast.LENGTH_SHORT).show()
+                                    } else {
+                                        Toast.makeText(context, "滑动失败: ${result.error}", Toast.LENGTH_SHORT).show()
+                                    }
+                                } else {
+                                    Toast.makeText(context, "格式错误", Toast.LENGTH_SHORT).show()
+                                }
+                            } catch (e: Exception) {
+                                Toast.makeText(context, "输入错误: ${e.message}", Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                        showInputDialog = true
+                    }
+                )
+            }
+
+            // 输入文本
+            item {
+                WeChatToolItem(
+                    icon = Icons.Default.Keyboard,
+                    title = "输入文本",
+                    subtitle = "⌨️ 在当前输入框输入文字",
+                    onClick = {
+                        inputDialogTitle = "输入文本"
+                        inputDialogHint = "输入要填写的文字"
+                        inputValue = ""
+                        inputDialogAction = { text ->
+                            try {
+                                val result = kernel.executeToolJson("type_text", "{\"text\":\"$text\"}")
+                                if (result.success) {
+                                    Toast.makeText(context, "输入成功", Toast.LENGTH_SHORT).show()
+                                } else {
+                                    Toast.makeText(context, "输入失败: ${result.error}", Toast.LENGTH_SHORT).show()
+                                }
+                            } catch (e: Exception) {
+                                Toast.makeText(context, "输入失败: ${e.message}", Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                        showInputDialog = true
+                    }
+                )
+            }
+
+            // 按键
+            item {
+                WeChatToolItem(
+                    icon = Icons.Default.Apps,
+                    title = "按键操作",
+                    subtitle = "🔙 返回 🏠 主页 📱 最近",
+                    onClick = {
+                        // 显示按键选择对话框
+                        inputDialogTitle = "按键操作"
+                        inputDialogHint = "输入: back / home / recent"
+                        inputValue = ""
+                        inputDialogAction = { key ->
+                            try {
+                                val keycode = when (key.lowercase()) {
+                                    "back", "返回" -> 4
+                                    "home", "主页" -> 3
+                                    "recent", "最近", "recents" -> 187
+                                    else -> key.toIntOrNull() ?: 4
+                                }
+                                val result = kernel.executeToolJson("press_key", "{\"keycode\":$keycode}")
+                                Toast.makeText(context, "按键成功", Toast.LENGTH_SHORT).show()
+                            } catch (e: Exception) {
+                                Toast.makeText(context, "按键失败: ${e.message}", Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                        showInputDialog = true
+                    }
+                )
+            }
+
+            // ========== 应用管理组 ==========
+            item {
+                Text(
+                    text = "应用管理",
+                    fontSize = 14.sp,
+                    color = Color.Gray,
+                    modifier = Modifier.padding(start = 8.dp, top = 8.dp, bottom = 4.dp)
+                )
+            }
+
+            // 打开应用
+            item {
+                WeChatToolItem(
+                    icon = Icons.Default.OpenInNew,
+                    title = "打开应用",
+                    subtitle = "📱 打开指定应用",
+                    onClick = {
+                        inputDialogTitle = "打开应用"
+                        inputDialogHint = "输入应用包名 (例如: com.tencent.mm)"
+                        inputValue = ""
+                        inputDialogAction = { packageName ->
+                            try {
+                                val result = kernel.executeToolJson("open_app", "{\"package\":\"$packageName\"}")
+                                if (result.success) {
+                                    Toast.makeText(context, "打开成功", Toast.LENGTH_SHORT).show()
+                                } else {
+                                    Toast.makeText(context, "打开失败: ${result.error}", Toast.LENGTH_SHORT).show()
+                                }
+                            } catch (e: Exception) {
+                                Toast.makeText(context, "打开失败: ${e.message}", Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                        showInputDialog = true
+                    }
+                )
+            }
+
+            // 当前应用
+            item {
+                WeChatToolItem(
+                    icon = Icons.Default.Info,
+                    title = "当前应用",
+                    subtitle = "ℹ️ 查看当前运行的应用",
+                    onClick = {
+                        scope.launch {
+                            try {
+                                val result = kernel.executeToolJson("current_app", "{}")
+                                if (result.success && result.response != null) {
+                                    Toast.makeText(context, "当前应用: ${result.response}", Toast.LENGTH_LONG).show()
+                                } else {
+                                    Toast.makeText(context, "获取失败", Toast.LENGTH_SHORT).show()
+                                }
+                            } catch (e: Exception) {
+                                Toast.makeText(context, "获取失败: ${e.message}", Toast.LENGTH_SHORT).show()
+                            }
+                        }
                     }
                 )
             }
         }
+    }
+
+    // 输入对话框
+    if (showInputDialog) {
+        AlertDialog(
+            onDismissRequest = { showInputDialog = false },
+            title = { Text(inputDialogTitle) },
+            text = {
+                OutlinedTextField(
+                    value = inputValue,
+                    onValueChange = { inputValue = it },
+                    label = { Text(inputDialogHint) },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    if (inputValue.isNotBlank()) {
+                        showInputDialog = false
+                        scope.launch {
+                            inputDialogAction(inputValue)
+                        }
+                    }
+                }) {
+                    Text("确定")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showInputDialog = false }) {
+                    Text("取消")
+                }
+            }
+        )
     }
 }
 
