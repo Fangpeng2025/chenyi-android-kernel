@@ -1,0 +1,7 @@
+{
+  "versionCode": 9,
+  "versionName": "1.0.9",
+  "apkUrl": "https://oneapi.xintiandi.online/chenyi-agent/chenyi-agent-latest.apk",
+  "updateLog": "## UI简化更新\n\n### 新功能\n- ✅ 底部导航简化为3个标签（聊天/技能/设置）\n- ✅ 合并\"我\"页面到设置页面\n- ✅ 设置页面顶部显示头像和版本信息\n\n### 优化\n- ✅ 移除截图权限检查（只需无障碍服务）\n- ✅ UI更加简洁清爽\n- ✅ 性能优化\n\n官网: https://xintiandi.online",
+  "forceUpdate": false
+}
