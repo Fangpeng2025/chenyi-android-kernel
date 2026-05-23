@@ -965,7 +965,7 @@ fun SettingsScreen(
 
         Spacer(modifier = Modifier.height(16.dp))
 
-// 更新管理组（微信风格卡片）
+        // 更新管理组（微信风格卡片）
         Surface(
             modifier = Modifier.fillMaxWidth(),
             color = Color.White
