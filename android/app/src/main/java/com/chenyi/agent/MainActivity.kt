@@ -85,9 +85,16 @@ class MainActivity : ComponentActivity() {
             Log.d("MainActivity", "已从 SharedPreferences 加载 API Key")
         }
         
-        screenshotManager = ScreenshotManager(this)
+screenshotManager = ScreenshotManager(this)
         screenshotManager.init()
+        
+        // OCR 引擎初始化（在后台线程）
         ocrEngine = OcrEngine(this)
+        Thread {
+            val success = ocrEngine.initSync()
+            Log.d("MainActivity", "OCR 初始化: $success")
+        }.start()
+        
         sessionManager = SessionManager(this)
 
         // 注意：Android 14+ 不允许从后台启动前台服务
@@ -689,51 +696,30 @@ WeChatToolItem(
                 )
             }
 
-            // OCR 识别
+// OCR 识别
             item {
                 val a11yService = ChenyiAccessibilityService.getInstance()
                 val a11yConnected = a11yService != null
-                val screenshotAuth = screenshotHelper.isAuthorized()
-                val ocrReady = ocrEngine.isInitialized()
 
-WeChatToolItem(
+                WeChatToolItem(
                     icon = Icons.Default.DocumentScanner,
                     title = "OCR 识别",
-                    subtitle = when {
-                        !a11yConnected -> "❌ 无障碍服务未开启"
-                        !ocrReady -> "⏳ OCR 初始化中..."
-                        else -> "✅ 识别屏幕文字"
-                    },
+                    subtitle = if (!a11yConnected) "❌ 无障碍服务未开启" else "✅ 识别屏幕文字",
                     onClick = {
-                        when {
-                            !a11yConnected -> {
-                                Toast.makeText(context, "请先开启无障碍服务", Toast.LENGTH_SHORT).show()
-                            }
-                            !ocrReady -> {
-                                Toast.makeText(context, "OCR 正在初始化...", Toast.LENGTH_SHORT).show()
-                            }
-                            else -> {
-                                scope.launch {
-                                    try {
-                                        val screenshotResult = kernel.executeToolJson("screenshot", "{}")
-                                        if (screenshotResult.success && screenshotResult.response != null) {
-                                            val pathJson = org.json.JSONObject(screenshotResult.response)
-                                            val imagePath = pathJson.getString("path")
-
-                                            val bitmap = android.graphics.BitmapFactory.decodeFile(imagePath)
-                                            if (bitmap != null) {
-                                                val ocrResult = ocrEngine.recognize(bitmap)
-                                                bitmap.recycle()
-                                                if (ocrResult.success) {
-                                                    Toast.makeText(context, "识别成功:\\n${ocrResult.fullText.take(100)}", Toast.LENGTH_LONG).show()
-                                                } else {
-                                                    Toast.makeText(context, "识别失败: ${ocrResult.error}", Toast.LENGTH_SHORT).show()
-                                                }
-                                            }
-                                        }
-                                    } catch (e: Exception) {
-                                        Toast.makeText(context, "OCR 失败: ${e.message}", Toast.LENGTH_SHORT).show()
+                        if (!a11yConnected) {
+                            Toast.makeText(context, "请先开启无障碍服务", Toast.LENGTH_SHORT).show()
+                        } else {
+                            scope.launch {
+                                try {
+                                    // 直接使用无障碍服务的 OCR 工具
+                                    val result = kernel.executeToolJson("ocr", "{}")
+                                    if (result.success && result.response != null) {
+                                        Toast.makeText(context, "识别成功:\n${result.response}", Toast.LENGTH_LONG).show()
+                                    } else {
+                                        Toast.makeText(context, "识别失败: ${result.error}", Toast.LENGTH_SHORT).show()
                                     }
+                                } catch (e: Exception) {
+                                    Toast.makeText(context, "OCR 失败: ${e.message}", Toast.LENGTH_SHORT).show()
                                 }
                             }
                         }
@@ -741,15 +727,14 @@ WeChatToolItem(
                 )
             }
 
-            // 查找文本
+// 查找文本
             item {
                 val a11yService = ChenyiAccessibilityService.getInstance()
-                val ocrReady = ocrEngine.isInitialized()
 
                 WeChatToolItem(
                     icon = Icons.Default.Search,
                     title = "查找文本",
-                    subtitle = if (a11yService == null || !ocrReady) "❌ 需要无障碍服务" else "🔍 在屏幕上查找文本位置",
+                    subtitle = if (a11yService == null) "❌ 需要无障碍服务" else "🔍 在屏幕上查找文本位置",
                     onClick = {
                         inputDialogTitle = "查找文本"
                         inputDialogHint = "输入要查找的文本"
