@@ -1,5 +1,5 @@
 {
-  "versionCode": 21,
+  "versionCode": 10012,
   "versionName": "1.0.12",
   "apkUrl": "https://oneapi.xintiandi.online/chenyi-agent/chenyi-agent-latest.apk",
   "updateLog": "## v1.0.12 更新\n\n### 修复\n- ✅ 移除截图权限检查，只需无障碍服务\n- ✅ OCR 识别不再需要截图权限\n\n### 注意\n- ⚠️ 聊天功能需要先配置 API Key（设置页面）\n\n官网: https://xintiandi.online",
