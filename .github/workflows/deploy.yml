@@ -174,8 +174,15 @@ jobs:
           chmod 600 ~/.ssh/id_rsa
           ssh-keyscan -H 8.147.232.175 >> ~/.ssh/known_hosts
           
+          # 获取版本号
+          VERSION_NAME=$(grep "versionName" android/app/build.gradle.kts | head -1 | sed 's/.*versionName = "\(.*\)".*/\1/')
+          VERSION_CODE=$(grep "versionCode" android/app/build.gradle.kts | head -1 | sed 's/.*versionCode = \(.*\).*/\1/')
+          
           # 创建目录（如果不存在）
           ssh root@8.147.232.175 "mkdir -p /www/wwwroot/xintiandi.online/files/chenyi-agent/"
+          
+          # 清理旧版本 APK，只保留 latest
+          ssh root@8.147.232.175 "cd /www/wwwroot/xintiandi.online/files/chenyi-agent/ && rm -f chenyi-agent-*.apk chenyi-agent-v*.apk"
           
           # 上传 APK 到服务器
           scp android/app/build/outputs/apk/release/app-release.apk \
@@ -185,6 +192,10 @@ jobs:
           scp version.json \
             root@8.147.232.175:/www/wwwroot/xintiandi.online/files/chenyi-agent/version.json
           
+          # 更新官网版本号（从 version.json 读取）
+          ssh root@8.147.232.175 "sed -i 's/当前版本: v[0-9.]* |/当前版本: v${VERSION_NAME} |/' /www/wwwroot/xintiandi.online/official/index.html"
+          
           echo "✅ 部署完成"
+          echo "版本: v${VERSION_NAME} (code: ${VERSION_CODE})"
           echo "官网: https://xintiandi.online"
           echo "下载: https://oneapi.xintiandi.online/chenyi-agent/chenyi-agent-latest.apk"
