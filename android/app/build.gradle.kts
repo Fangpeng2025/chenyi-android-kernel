@@ -11,7 +11,7 @@ android {
 
     defaultConfig {
         applicationId = "com.chenyi.agent"
-        minSdk = 26
+        minSdk = 29
         targetSdk = 34
 versionCode = 10014
         versionName = "1.0.14"
