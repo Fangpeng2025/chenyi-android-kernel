@@ -30,7 +30,7 @@ class ChenyiAccessibilityService : AccessibilityService() {
         fun isRunning(): Boolean = instance != null
     }
 
-    private lateinit var ocrEngine: OcrEngine
+    private var ocrEngine: OcrEngine? = null
     
     override fun onServiceConnected() {
         super.onServiceConnected()
@@ -40,7 +40,7 @@ class ChenyiAccessibilityService : AccessibilityService() {
         Thread {
             try {
                 ocrEngine = OcrEngine(applicationContext)
-                ocrEngine.initSync()
+                ocrEngine?.initSync()
                 Log.d(TAG, "OCR 初始化完成")
             } catch (e: Exception) {
                 Log.e(TAG, "OCR 初始化失败: ${e.message}", e)
@@ -109,30 +109,28 @@ class ChenyiAccessibilityService : AccessibilityService() {
                 return Result.error("截图失败: ${screenshotResult.error}")
             }
             
-            val result = JSONObject()
+            val result = mutableMapOf<String, Any?>()
             
             // 截图信息
-            if (screenshotResult.data != null) {
-                result.put("screenshot", screenshotResult.data!!)
-            }
+            screenshotResult.data?.let { result["screenshot"] = it }
             
             // 2. UI 层级
             val uiTree = getUITree(JSONObject().apply {
                 put("maxDepth", if (compact) 5 else 15)
             })
             if (uiTree.success && uiTree.data != null) {
-                result.put("elements", uiTree.data!!.getJSONObject("tree"))
+                result["elements"] = uiTree.data!!["tree"]
             }
             
             // 3. OCR
-            if (withOcr && ::ocrEngine.isInitialized) {
+            if (withOcr) {
                 val ocrResult = ocr(JSONObject())
                 if (ocrResult.success && ocrResult.data != null) {
-                    result.put("ocr", ocrResult.data!!)
+                    result["ocr"] = ocrResult.data!!
                 }
             }
             
-            return Result.success(result)
+            return Result.ok(result)
         } catch (e: Exception) {
             return Result.error("see 失败: ${e.message}")
         }
@@ -148,54 +146,54 @@ class ChenyiAccessibilityService : AccessibilityService() {
             val tree = buildUITree(root, 0, maxDepth)
             root.recycle()
             
-            return Result.success(JSONObject().put("tree", tree))
+            return Result.ok(mapOf("tree" to tree))
         } catch (e: Exception) {
             return Result.error("获取 UI 树失败: ${e.message}")
         }
     }
     
-    private fun buildUITree(node: AccessibilityNodeInfo, depth: Int, maxDepth: Int): JSONObject {
-        val json = JSONObject()
+    private fun buildUITree(node: AccessibilityNodeInfo, depth: Int, maxDepth: Int): Map<String, Any?> {
+        val map = mutableMapOf<String, Any?>()
         
         // 基本信息
-        json.put("className", node.className?.toString() ?: "")
-        json.put("text", node.text?.toString() ?: "")
-        json.put("contentDescription", node.contentDescription?.toString() ?: "")
-        json.put("viewIdResourceName", node.viewIdResourceName ?: "")
+        map["className"] = node.className?.toString() ?: ""
+        map["text"] = node.text?.toString() ?: ""
+        map["contentDescription"] = node.contentDescription?.toString() ?: ""
+        map["viewIdResourceName"] = node.viewIdResourceName ?: ""
         
         // 状态
-        json.put("isClickable", node.isClickable)
-        json.put("isScrollable", node.isScrollable)
-        json.put("isEditable", node.isEditable)
-        json.put("isEnabled", node.isEnabled)
-        json.put("isFocused", node.isFocused)
-        json.put("isSelected", node.isSelected)
-        json.put("isChecked", node.isChecked)
+        map["isClickable"] = node.isClickable
+        map["isScrollable"] = node.isScrollable
+        map["isEditable"] = node.isEditable
+        map["isEnabled"] = node.isEnabled
+        map["isFocused"] = node.isFocused
+        map["isSelected"] = node.isSelected
+        map["isChecked"] = node.isChecked
         
         // 边界
         val bounds = Rect()
         node.getBoundsInScreen(bounds)
-        json.put("bounds", JSONObject().apply {
-            put("left", bounds.left)
-            put("top", bounds.top)
-            put("right", bounds.right)
-            put("bottom", bounds.bottom)
-        })
+        map["bounds"] = mapOf(
+            "left" to bounds.left,
+            "top" to bounds.top,
+            "right" to bounds.right,
+            "bottom" to bounds.bottom
+        )
         
         // 递归子节点
         if (depth < maxDepth && node.childCount > 0) {
-            val children = JSONArray()
+            val children = mutableListOf<Map<String, Any?>>()
             for (i in 0 until node.childCount) {
                 val child = node.getChild(i)
                 if (child != null) {
-                    children.put(buildUITree(child, depth + 1, maxDepth))
+                    children.add(buildUITree(child, depth + 1, maxDepth))
                     child.recycle()
                 }
             }
-            json.put("children", children)
+            map["children"] = children
         }
         
-        return json
+        return map
     }
     
     private fun findElement(params: JSONObject): Result {
@@ -207,17 +205,14 @@ class ChenyiAccessibilityService : AccessibilityService() {
             val contentDesc = params.optString("contentDescription", null)
             val maxResults = params.optInt("maxResults", 10)
             
-            val results = mutableListOf<JSONObject>()
+            val results = mutableListOf<Map<String, Any?>>()
             findElementsRecursive(root, text, id, contentDesc, results, maxResults)
             root.recycle()
             
-            val elements = JSONArray()
-            results.forEach { elements.put(it) }
-            
-            return Result.success(JSONObject().apply {
-                put("elements", elements)
-                put("count", results.size)
-            })
+            return Result.ok(mapOf(
+                "elements" to results,
+                "count" to results.size
+            ))
         } catch (e: Exception) {
             return Result.error("查找元素失败: ${e.message}")
         }
@@ -228,7 +223,7 @@ class ChenyiAccessibilityService : AccessibilityService() {
         text: String?,
         id: String?,
         contentDesc: String?,
-        results: MutableList<JSONObject>,
+        results: MutableList<Map<String, Any?>>,
         maxResults: Int
     ) {
         if (results.size >= maxResults) return
@@ -246,7 +241,7 @@ class ChenyiAccessibilityService : AccessibilityService() {
         }
         
         if (match) {
-            results.add(nodeToJSON(node))
+            results.add(nodeToMap(node))
         }
         
         // 递归子节点
@@ -293,7 +288,7 @@ class ChenyiAccessibilityService : AccessibilityService() {
             node.recycle()
             
             return if (result) {
-                Result.success(JSONObject().put("clicked", desc))
+                Result.ok(mapOf("clicked" to desc))
             } else {
                 Result.error("点击失败")
             }
@@ -350,26 +345,26 @@ class ChenyiAccessibilityService : AccessibilityService() {
         }
     }
     
-    private fun nodeToJSON(node: AccessibilityNodeInfo): JSONObject {
-        val json = JSONObject()
-        json.put("className", node.className?.toString() ?: "")
-        json.put("text", node.text?.toString() ?: "")
-        json.put("contentDescription", node.contentDescription?.toString() ?: "")
-        json.put("viewIdResourceName", node.viewIdResourceName ?: "")
-        json.put("isClickable", node.isClickable)
-        json.put("isScrollable", node.isScrollable)
-        json.put("isEditable", node.isEditable)
+    private fun nodeToMap(node: AccessibilityNodeInfo): Map<String, Any?> {
+        val map = mutableMapOf<String, Any?>()
+        map["className"] = node.className?.toString() ?: ""
+        map["text"] = node.text?.toString() ?: ""
+        map["contentDescription"] = node.contentDescription?.toString() ?: ""
+        map["viewIdResourceName"] = node.viewIdResourceName ?: ""
+        map["isClickable"] = node.isClickable
+        map["isScrollable"] = node.isScrollable
+        map["isEditable"] = node.isEditable
         
         val bounds = Rect()
         node.getBoundsInScreen(bounds)
-        json.put("bounds", JSONObject().apply {
-            put("left", bounds.left)
-            put("top", bounds.top)
-            put("right", bounds.right)
-            put("bottom", bounds.bottom)
-        })
+        map["bounds"] = mapOf(
+            "left" to bounds.left,
+            "top" to bounds.top,
+            "right" to bounds.right,
+            "bottom" to bounds.bottom
+        )
         
-        return json
+        return map
     }
 
     // ============ 文本点击（OCR + 坐标） ============
@@ -406,7 +401,7 @@ class ChenyiAccessibilityService : AccessibilityService() {
                     match.recycle()
                     
                     return if (clicked) {
-                        Result.success(JSONObject().put("clicked", text))
+                        Result.ok(mapOf("clicked" to text))
                     } else {
                         Result.error("点击失败")
                     }
@@ -415,21 +410,16 @@ class ChenyiAccessibilityService : AccessibilityService() {
             }
             
             // 方法2：通过 OCR 查找
-            val screenshotResult = screenshot(JSONObject())
-            if (!screenshotResult.success) {
-                return Result.error("截图失败")
-            }
-            
             val ocrResult = ocr(JSONObject())
             if (!ocrResult.success || ocrResult.data == null) {
                 return Result.error("OCR 失败")
             }
             
-            val words = ocrResult.data!!.getJSONArray("words")
-            for (i in 0 until words.length()) {
-                val word = words.getJSONObject(i)
-                val wordText = word.getString("text")
-                
+            @Suppress("UNCHECKED_CAST")
+            val words = ocrResult.data!!["words"] as? List<Map<String, Any?>> ?: return Result.error("无 OCR 结果")
+            
+            for (word in words) {
+                val wordText = word["text"] as? String ?: continue
                 val isMatch = if (fuzzy) {
                     wordText.contains(text, ignoreCase = true)
                 } else {
@@ -437,8 +427,8 @@ class ChenyiAccessibilityService : AccessibilityService() {
                 }
                 
                 if (isMatch) {
-                    val x = word.getInt("x") + word.getInt("width") / 2
-                    val y = word.getInt("y") + word.getInt("height") / 2
+                    val x = (word["x"] as? Number)?.toInt()?.let { it + (word["width"] as? Number)?.toInt()?.div(2) } ?: continue
+                    val y = (word["y"] as? Number)?.toInt()?.let { it + (word["height"] as? Number)?.toInt()?.div(2) } ?: continue
                     
                     return tap(JSONObject().apply {
                         put("x", x)
@@ -463,13 +453,13 @@ class ChenyiAccessibilityService : AccessibilityService() {
                 return Result.error("OCR 失败")
             }
             
-            val words = ocrResult.data!!.getJSONArray("words")
-            val matches = JSONArray()
+            @Suppress("UNCHECKED_CAST")
+            val words = ocrResult.data!!["words"] as? List<Map<String, Any?>> ?: return Result.error("无 OCR 结果")
             
-            for (i in 0 until words.length()) {
-                val word = words.getJSONObject(i)
-                val wordText = word.getString("text")
-                
+            val matches = mutableListOf<Map<String, Any?>>()
+            
+            for (word in words) {
+                val wordText = word["text"] as? String ?: continue
                 val isMatch = if (fuzzy) {
                     wordText.contains(text, ignoreCase = true)
                 } else {
@@ -477,15 +467,15 @@ class ChenyiAccessibilityService : AccessibilityService() {
                 }
                 
                 if (isMatch) {
-                    matches.put(word)
+                    matches.add(word)
                 }
             }
             
-            return Result.success(JSONObject().apply {
-                put("found", matches.length() > 0)
-                put("matches", matches)
-                put("count", matches.length())
-            })
+            return Result.ok(mapOf(
+                "found" to (matches.isNotEmpty()),
+                "matches" to matches,
+                "count" to matches.size
+            ))
         } catch (e: Exception) {
             return Result.error("查找文本失败: ${e.message}")
         }
@@ -495,16 +485,14 @@ class ChenyiAccessibilityService : AccessibilityService() {
     
     private fun ocr(params: JSONObject): Result {
         try {
-            if (!::ocrEngine.isInitialized) {
-                return Result.error("OCR 未初始化")
-            }
+            val engine = ocrEngine ?: return Result.error("OCR 未初始化")
             
             val screenshotResult = screenshot(JSONObject())
             if (!screenshotResult.success) {
                 return Result.error("截图失败: ${screenshotResult.error}")
             }
             
-            val imageData = screenshotResult.data?.getString("image")
+            val imageData = screenshotResult.data?.get("image") as? String
             if (imageData.isNullOrEmpty()) {
                 return Result.error("无图像数据")
             }
@@ -513,30 +501,29 @@ class ChenyiAccessibilityService : AccessibilityService() {
             val bitmap = android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
                 ?: return Result.error("解码图像失败")
             
-            val ocrResult = ocrEngine.recognize(bitmap)
+            val ocrResult = engine.recognize(bitmap)
             bitmap.recycle()
             
             if (!ocrResult.success) {
                 return Result.error(ocrResult.error ?: "OCR 失败")
             }
             
-            val wordsArray = JSONArray()
-            ocrResult.words.forEach { word ->
-                wordsArray.put(JSONObject().apply {
-                    put("text", word.text)
-                    put("confidence", word.confidence)
-                    put("x", word.x)
-                    put("y", word.y)
-                    put("width", word.width)
-                    put("height", word.height)
-                })
+            val wordsList = ocrResult.words.map { word ->
+                mapOf<String, Any?>(
+                    "text" to word.text,
+                    "confidence" to word.confidence,
+                    "x" to word.x,
+                    "y" to word.y,
+                    "width" to word.width,
+                    "height" to word.height
+                )
             }
             
-            return Result.success(JSONObject().apply {
-                put("text", ocrResult.fullText)
-                put("words", wordsArray)
-                put("wordCount", ocrResult.words.size)
-            })
+            return Result.ok(mapOf(
+                "text" to ocrResult.fullText,
+                "words" to wordsList,
+                "wordCount" to ocrResult.words.size
+            ))
         } catch (e: Exception) {
             return Result.error("OCR 失败: ${e.message}")
         }
@@ -646,7 +633,7 @@ class ChenyiAccessibilityService : AccessibilityService() {
         latch.await(5, TimeUnit.SECONDS)
         
         return if (success) {
-            Result.success(JSONObject().put("action", label))
+            Result.ok(mapOf("action" to label))
         } else {
             Result.error("手势 $label 失败或超时")
         }
@@ -670,7 +657,7 @@ class ChenyiAccessibilityService : AccessibilityService() {
             focused.recycle()
             
             return if (result) {
-                Result.success(JSONObject().put("typed", text))
+                Result.ok(mapOf("typed" to text))
             } else {
                 Result.error("输入文本失败")
             }
@@ -698,7 +685,7 @@ class ChenyiAccessibilityService : AccessibilityService() {
             
             val result = performGlobalAction(action)
             return if (result) {
-                Result.success(JSONObject().put("key", key))
+                Result.ok(mapOf("key" to key))
             } else {
                 Result.error("按键失败: $key")
             }
@@ -718,7 +705,7 @@ class ChenyiAccessibilityService : AccessibilityService() {
             intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             startActivity(intent)
             
-            Result.success(JSONObject().put("opened", packageName))
+            Result.ok(mapOf("opened" to packageName))
         } catch (e: Exception) {
             Result.error("打开应用失败: ${e.message}")
         }
@@ -727,7 +714,7 @@ class ChenyiAccessibilityService : AccessibilityService() {
     private fun closeApp(params: JSONObject): Result {
         return try {
             performGlobalAction(GLOBAL_ACTION_HOME)
-            Result.success(JSONObject().put("closed", true))
+            Result.ok(mapOf("closed" to true))
         } catch (e: Exception) {
             Result.error("关闭应用失败: ${e.message}")
         }
@@ -739,7 +726,7 @@ class ChenyiAccessibilityService : AccessibilityService() {
             val packageName = root.packageName?.toString() ?: "未知"
             root.recycle()
             
-            Result.success(JSONObject().put("package", packageName))
+            Result.ok(mapOf("package" to packageName))
         } catch (e: Exception) {
             Result.error("获取当前应用失败: ${e.message}")
         }
@@ -781,13 +768,16 @@ class ChenyiAccessibilityService : AccessibilityService() {
             val stream = ByteArrayOutputStream()
             bitmap.compress(Bitmap.CompressFormat.JPEG, quality, stream)
             val base64 = Base64.encodeToString(stream.toByteArray(), Base64.DEFAULT)
+            
+            val width = bitmap.width
+            val height = bitmap.height
             bitmap.recycle()
             
-            Result.success(JSONObject().apply {
-                put("image", base64)
-                put("width", resultBitmap?.width ?: 0)
-                put("height", resultBitmap?.height ?: 0)
-            })
+            Result.ok(mapOf(
+                "image" to base64,
+                "width" to width,
+                "height" to height
+            ))
         } catch (e: Exception) {
             Result.error("截图失败: ${e.message}")
         }
@@ -799,7 +789,7 @@ class ChenyiAccessibilityService : AccessibilityService() {
         return try {
             val duration = params.getLong("duration")
             Thread.sleep(duration)
-            Result.success(JSONObject().put("waited", duration))
+            Result.ok(mapOf("waited" to duration))
         } catch (e: Exception) {
             Result.error("等待失败: ${e.message}")
         }
@@ -808,11 +798,11 @@ class ChenyiAccessibilityService : AccessibilityService() {
     private fun getScreenSize(params: JSONObject): Result {
         return try {
             val displayMetrics = resources.displayMetrics
-            Result.success(JSONObject().apply {
-                put("width", displayMetrics.widthPixels)
-                put("height", displayMetrics.heightPixels)
-                put("density", displayMetrics.density)
-            })
+            Result.ok(mapOf(
+                "width" to displayMetrics.widthPixels,
+                "height" to displayMetrics.heightPixels,
+                "density" to displayMetrics.density
+            ))
         } catch (e: Exception) {
             Result.error("获取屏幕尺寸失败: ${e.message}")
         }
