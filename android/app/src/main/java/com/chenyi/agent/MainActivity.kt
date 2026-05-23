@@ -759,7 +759,7 @@ fun ToolsScreen(
                 WeChatToolItem(
                     icon = Icons.Default.Search,
                     title = "查找文本",
-                    subtitle = if (!a11yService != null || !ocrReady) "❌ 需要无障碍服务" else "🔍 在屏幕上查找文本位置",
+                    subtitle = if (a11yService == null || !ocrReady) "❌ 需要无障碍服务" else "🔍 在屏幕上查找文本位置",
                     onClick = {
                         inputDialogTitle = "查找文本"
                         inputDialogHint = "输入要查找的文本"
