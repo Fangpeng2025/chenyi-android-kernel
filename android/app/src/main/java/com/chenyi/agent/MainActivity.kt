@@ -322,9 +322,10 @@ fun ChatScreen(
     
     // 待发送的消息（用于触发 LaunchedEffect）
     var pendingMessage by remember { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
+    var hasShownApiKeyWarning by remember { mutableStateOf(false) }
     
     // API Key 未设置提示 - 只在首次进入聊天页面时显示
-    var hasShownApiKeyWarning by remember { mutableStateOf(false) }
 
     // API Key 未设置提示
     if (apiKey.isBlank() && !hasShownApiKeyWarning) {
@@ -340,60 +341,63 @@ fun ChatScreen(
         )
     }
     
-    // 处理消息发送（使用 LaunchedEffect 避免协程作用域问题）
+// 处理消息发送
     LaunchedEffect(pendingMessage) {
         if (pendingMessage != null && pendingMessage!!.isNotBlank()) {
             val message = pendingMessage!!
             pendingMessage = null  // 清除待发送消息
             
             Log.d("ChatScreen", "开始处理消息: $message")
+            isLoading = true
             
-            try {
-                val response = withContext(Dispatchers.IO) {
-                    // 使用 chatWithTools 自动处理工具调用
-                    kernel.chatWithTools(message)
-                }
-                
-                Log.d("ChatScreen", "收到响应: success=${response.success}, error=${response.error}")
-                
-                // 更友好的错误显示
-                val content = when {
-                    response.response != null && response.response.isNotBlank() -> response.response
-                    response.error != null && response.error.isNotBlank() -> {
-                        // 解析错误类型，提供友好提示
-                        val error = response.error
-                        when {
-                            error.contains("401") || error.contains("无效的令牌") || error.contains("Unauthorized") -> 
-                                "❌ API Key 无效或已过期\n\n请前往设置页面检查并更新 API Key"
-                            error.contains("无障碍服务") -> 
-                                "❌ ${error}\n\n请前往设置 → 无障碍 → 晨翼Agent 开启服务"
-                            error.contains("网络") || error.contains("timeout") -> 
-                                "❌ 网络连接失败\n\n请检查网络连接后重试"
-                            else -> "❌ 错误: ${error}"
-                        }
+            scope.launch {
+                try {
+                    val response = withContext(Dispatchers.IO) {
+                        kernel.chatWithTools(message)
                     }
-                    else -> "⚠️ 无响应，请稍后重试"
+                    
+                    Log.d("ChatScreen", "收到响应: success=${response.success}, response=${response.response?.take(50)}")
+                    
+                    // 更友好的错误显示
+                    val content = when {
+                        response.response != null && response.response.isNotBlank() -> response.response
+                        response.error != null && response.error.isNotBlank() -> {
+                            val error = response.error
+                            when {
+                                error.contains("401") || error.contains("无效的令牌") -> 
+                                    "❌ API Key 无效或已过期\n\n请前往设置页面检查并更新 API Key"
+                                error.contains("无障碍服务") -> 
+                                    "❌ ${error}\n\n请前往设置 → 无障碍 → 晨翼Agent 开启服务"
+                                error.contains("网络") || error.contains("timeout") -> 
+                                    "❌ 网络连接失败\n\n请检查网络连接后重试"
+                                else -> "❌ 错误: ${error}"
+                            }
+                        }
+                        else -> "⚠️ 无响应，请稍后重试"
+                    }
+                    
+                    Log.d("ChatScreen", "显示内容: ${content.take(50)}")
+                    
+                    val assistantMessage = Message(role = "assistant", content = content)
+                    currentSession = currentSession.addMessage(assistantMessage)
+                    sessionManager.saveSession(currentSession)
+                    
+                    // 滚动到底部
+                    withContext(Dispatchers.Main) {
+                        listState.animateScrollToItem(currentSession.messages.size - 1)
+                    }
+                } catch (e: Exception) {
+                    Log.e("ChatScreen", "发送失败", e)
+                    val errorMsg = "❌ 发送失败: ${e.message}"
+                    withContext(Dispatchers.Main) {
+                        Toast.makeText(context, errorMsg, Toast.LENGTH_SHORT).show()
+                    }
+                    val errorMessage = Message(role = "assistant", content = errorMsg)
+                    currentSession = currentSession.addMessage(errorMessage)
+                    sessionManager.saveSession(currentSession)
+                } finally {
+                    isLoading = false
                 }
-                
-                Log.d("ChatScreen", "显示内容: $content")
-                
-                val assistantMessage = Message(role = "assistant", content = content)
-                currentSession = currentSession.addMessage(assistantMessage)
-                sessionManager.saveSession(currentSession)
-            } catch (e: Exception) {
-                Log.e("ChatScreen", "发送失败", e)
-                // 显示详细错误信息
-                val errorMsg = "发送失败: ${e.message}\n类型: ${e.javaClass.simpleName}"
-                withContext(Dispatchers.Main) {
-                    Toast.makeText(context, errorMsg, Toast.LENGTH_LONG).show()
-                }
-                // 也在消息中显示错误
-                val errorMessage = Message(role = "assistant", content = "❌ 发送失败: ${e.message}")
-                currentSession = currentSession.addMessage(errorMessage)
-                sessionManager.saveSession(currentSession)
-            } finally {
-                Log.d("ChatScreen", "处理完成，isLoading = false")
-                isLoading = false
             }
         }
     }
