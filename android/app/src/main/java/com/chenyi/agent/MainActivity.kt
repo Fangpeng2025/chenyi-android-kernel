@@ -645,31 +645,24 @@ fun ToolsScreen(
                 val a11yConnected = a11yService != null
                 val screenshotAuth = screenshotHelper.isAuthorized()
 
-                WeChatToolItem(
+WeChatToolItem(
                     icon = Icons.Default.Screenshot,
                     title = "截图",
                     subtitle = when {
                         !a11yConnected -> "❌ 无障碍服务未开启"
-                        !screenshotAuth -> "⚠️ 截图权限未授权"
                         else -> "✅ 截取当前屏幕"
                     },
                     onClick = {
                         when {
                             !a11yConnected -> {
-                                Toast.makeText(context, "请先开启无障碍服务\\n设置 → 无障碍 → 晨翼Agent", Toast.LENGTH_LONG).show()
-                            }
-                            !screenshotAuth -> {
-                                if (activity != null) {
-                                    Toast.makeText(context, "请授权截图权限", Toast.LENGTH_SHORT).show()
-                                    screenshotHelper.requestPermission(activity)
-                                }
+                                Toast.makeText(context, "请先开启无障碍服务\n设置 → 无障碍 → 晨翼Agent", Toast.LENGTH_LONG).show()
                             }
                             else -> {
                                 scope.launch {
                                     try {
                                         val result = kernel.executeToolJson("screenshot", "{}")
                                         if (result.success && result.response != null) {
-                                            Toast.makeText(context, "截图成功\\n保存至: ${result.response}", Toast.LENGTH_LONG).show()
+                                            Toast.makeText(context, "截图成功\n保存至: ${result.response}", Toast.LENGTH_LONG).show()
                                         } else {
                                             Toast.makeText(context, "截图失败: ${result.error}", Toast.LENGTH_SHORT).show()
                                         }
@@ -700,12 +693,11 @@ fun ToolsScreen(
                 val screenshotAuth = screenshotHelper.isAuthorized()
                 val ocrReady = ocrEngine.isInitialized()
 
-                WeChatToolItem(
+WeChatToolItem(
                     icon = Icons.Default.DocumentScanner,
                     title = "OCR 识别",
                     subtitle = when {
                         !a11yConnected -> "❌ 无障碍服务未开启"
-                        !screenshotAuth -> "⚠️ 截图权限未授权"
                         !ocrReady -> "⏳ OCR 初始化中..."
                         else -> "✅ 识别屏幕文字"
                     },
@@ -713,11 +705,6 @@ fun ToolsScreen(
                         when {
                             !a11yConnected -> {
                                 Toast.makeText(context, "请先开启无障碍服务", Toast.LENGTH_SHORT).show()
-                            }
-                            !screenshotAuth -> {
-                                if (activity != null) {
-                                    screenshotHelper.requestPermission(activity)
-                                }
                             }
                             !ocrReady -> {
                                 Toast.makeText(context, "OCR 正在初始化...", Toast.LENGTH_SHORT).show()
