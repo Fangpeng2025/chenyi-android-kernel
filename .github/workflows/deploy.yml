@@ -1,0 +1,188 @@
+name: Deploy to Server
+
+on:
+  push:
+    branches: [master, main]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    name: Build and Deploy
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Setup NDK
+        run: |
+          sdkmanager "ndk;25.2.9519653" --sdk_root=$ANDROID_HOME
+          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/25.2.9519653" >> $GITHUB_ENV
+          echo "NDK_TOOLCHAIN=$ANDROID_HOME/ndk/25.2.9519653/toolchains/llvm/prebuilt/linux-x86_64" >> $GITHUB_ENV
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android,i686-linux-android
+
+      - name: Install OpenSSL Development Libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libssl-dev pkg-config
+
+      - name: Add NDK to PATH
+        run: |
+          echo "$NDK_TOOLCHAIN/bin" >> $GITHUB_PATH
+
+      - name: Cache Cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Cache Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+            android/.gradle
+          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle.kts') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-
+
+      - name: Build Rust Kernel (arm64-v8a)
+        env:
+          CC_aarch64-linux-android: aarch64-linux-android29-clang
+          AR_aarch64-linux-android: llvm-ar
+        run: |
+          cargo build --release --target aarch64-linux-android --features android
+
+      - name: Build Rust Kernel (armeabi-v7a)
+        env:
+          CC_armv7-linux-androideabi: armv7a-linux-androideabi29-clang
+          AR_armv7-linux-androideabi: llvm-ar
+        run: |
+          cargo build --release --target armv7-linux-androideabi --features android
+
+      - name: Build Rust Kernel (x86_64)
+        env:
+          CC_x86_64-linux-android: x86_64-linux-android29-clang
+          AR_x86_64-linux-android: llvm-ar
+        run: |
+          cargo build --release --target x86_64-linux-android --features android
+
+      - name: Build Rust Kernel (x86)
+        env:
+          CC_i686-linux-android: i686-linux-android29-clang
+          AR_i686-linux-android: llvm-ar
+        run: |
+          cargo build --release --target i686-linux-android --features android
+
+      - name: Copy Native Libraries
+        run: |
+          mkdir -p android/app/src/main/jniLibs/arm64-v8a
+          mkdir -p android/app/src/main/jniLibs/armeabi-v7a
+          mkdir -p android/app/src/main/jniLibs/x86_64
+          mkdir -p android/app/src/main/jniLibs/x86
+          
+          cp target/aarch64-linux-android/release/libchenyi.so android/app/src/main/jniLibs/arm64-v8a/
+          cp target/armv7-linux-androideabi/release/libchenyi.so android/app/src/main/jniLibs/armeabi-v7a/
+          cp target/x86_64-linux-android/release/libchenyi.so android/app/src/main/jniLibs/x86_64/
+          cp target/i686-linux-android/release/libchenyi.so android/app/src/main/jniLibs/x86/
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Decode Keystore
+        working-directory: android/app
+        run: |
+          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > chenyi-release.keystore
+          ls -la chenyi-release.keystore
+
+      - name: Build Release APK
+        working-directory: android
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD || 'chenyi2026agent' }}
+          KEY_ALIAS: chenyi-agent
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD || 'chenyi2026agent' }}
+        run: |
+          KEYSTORE_PATH="$(pwd)/app/chenyi-release.keystore"
+          gradle assembleRelease --no-daemon \
+            -Pandroid.injected.signing.store.file=$KEYSTORE_PATH \
+            -Pandroid.injected.signing.store.password=$KEYSTORE_PASSWORD \
+            -Pandroid.injected.signing.key.alias=$KEY_ALIAS \
+            -Pandroid.injected.signing.key.password=$KEY_PASSWORD
+
+      - name: Get Version
+        id: version
+        run: |
+          VERSION=$(grep "versionName" android/app/build.gradle.kts | head -1 | sed 's/.*versionName = "\(.*\)".*/\1/')
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Version: $VERSION"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.version.outputs.version }}
+          name: Release v${{ steps.version.outputs.version }}
+          body: |
+            ## 更新内容
+            
+            ### UI简化
+            - ✅ 底部导航简化为3个标签（聊天/技能/设置）
+            - ✅ 合并"我"页面到设置页面
+            - ✅ 移除截图权限检查
+            - ✅ 设置页面顶部显示头像和版本信息
+            
+            ### 技术改进
+            - Rust 内核优化
+            - 性能提升
+            
+            ## 下载
+            - app-release.apk (推荐)
+            
+            官网: https://xintiandi.online
+          files: |
+            android/app/build/outputs/apk/release/*.apk
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Deploy to Server
+        env:
+          SERVER_SSH_KEY: ${{ secrets.SERVER_SSH_KEY }}
+        run: |
+          # 设置 SSH 密钥
+          mkdir -p ~/.ssh
+          echo "$SERVER_SSH_KEY" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -H 8.147.232.175 >> ~/.ssh/known_hosts
+          
+          # 上传 APK 到服务器
+          scp android/app/build/outputs/apk/release/app-release.apk \
+            root@8.147.232.175:/www/wwwroot/oneapi.xintiandi.online/chenyi-agent/chenyi-agent-latest.apk
+          
+          # 创建版本文件
+          echo "${{ steps.version.outputs.version }}" > version.txt
+          scp version.txt \
+            root@8.147.232.175:/www/wwwroot/oneapi.xintiandi.online/chenyi-agent/version.txt
+          
+          echo "✅ 部署完成"
+          echo "官网: https://xintiandi.online"
+          echo "下载: https://oneapi.xintiandi.online/chenyi-agent/chenyi-agent-latest.apk"
