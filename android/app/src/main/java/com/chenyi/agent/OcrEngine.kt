@@ -4,7 +4,7 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.util.Log
 import io.github.hzkitty.RapidOCR
-import io.github.hzkitty.entity.OcrResult
+import io.github.hzkitty.entity.OcrResult as RapidOcrResult
 
 /**
  * OCR 引擎 - 使用 RapidOCR4j-Android
@@ -49,9 +49,9 @@ class OcrEngine(private val context: Context) {
     /**
      * 识别图片中的文字
      */
-    fun recognize(bitmap: Bitmap): OcrResult {
+    fun recognize(bitmap: Bitmap): ChenyiOcrResult {
         if (!initialized || rapidOCR == null) {
-            return OcrResult.error("OCR 未初始化")
+            return ChenyiOcrResult.error("OCR 未初始化")
         }
         
         return try {
@@ -59,22 +59,22 @@ class OcrEngine(private val context: Context) {
             parseRapidOcrResult(result)
         } catch (e: Exception) {
             Log.e(TAG, "OCR 识别失败: ${e.message}")
-            OcrResult.error(e.message ?: "识别失败")
+            ChenyiOcrResult.error(e.message ?: "识别失败")
         }
     }
     
     /**
      * 识别图片文件中的文字
      */
-    fun recognize(imagePath: String): OcrResult {
+    fun recognize(imagePath: String): ChenyiOcrResult {
         if (!initialized) {
-            return OcrResult.error("OCR 未初始化")
+            return ChenyiOcrResult.error("OCR 未初始化")
         }
         
         return try {
             val bitmap = android.graphics.BitmapFactory.decodeFile(imagePath)
             if (bitmap == null) {
-                return OcrResult.error("无法加载图片")
+                return ChenyiOcrResult.error("无法加载图片")
             }
             
             val result = recognize(bitmap)
@@ -82,19 +82,19 @@ class OcrEngine(private val context: Context) {
             result
         } catch (e: Exception) {
             Log.e(TAG, "OCR 识别失败: ${e.message}")
-            OcrResult.error(e.message ?: "识别失败")
+            ChenyiOcrResult.error(e.message ?: "识别失败")
         }
     }
     
     /**
      * 解析 RapidOCR 结果
      */
-    private fun parseRapidOcrResult(result: OcrResult?): OcrResult {
+    private fun parseRapidOcrResult(result: RapidOcrResult?): ChenyiOcrResult {
         if (result == null) {
-            return OcrResult.error("识别结果为空")
+            return ChenyiOcrResult.error("识别结果为空")
         }
         
-        val words = mutableListOf<OcrWord>()
+        val words = mutableListOf<ChenyiOcrWord>()
         val fullText = StringBuilder()
         
         result.recRes?.forEach { rec ->
@@ -116,7 +116,7 @@ class OcrEngine(private val context: Context) {
                 height = boxes[2].y.toInt() - y
             }
             
-            val word = OcrWord(
+            val word = ChenyiOcrWord(
                 text = text,
                 confidence = confidence,
                 x = x,
@@ -129,7 +129,7 @@ class OcrEngine(private val context: Context) {
         }
         
         Log.d(TAG, "OCR 识别完成: ${words.size} 个文本块")
-        return OcrResult(
+        return ChenyiOcrResult(
             success = true,
             words = words,
             fullText = fullText.toString().trim()
@@ -138,23 +138,23 @@ class OcrEngine(private val context: Context) {
 }
 
 /**
- * OCR 结果
+ * 晨翼 OCR 结果（避免与 RapidOCR 的 OcrResult 冲突）
  */
-data class OcrResult(
+data class ChenyiOcrResult(
     val success: Boolean,
-    val words: List<OcrWord>,
+    val words: List<ChenyiOcrWord>,
     val fullText: String,
     val error: String? = null
 ) {
     companion object {
-        fun error(msg: String) = OcrResult(false, emptyList(), "", msg)
+        fun error(msg: String) = ChenyiOcrResult(false, emptyList(), "", msg)
     }
 }
 
 /**
- * OCR 单词
+ * 晨翼 OCR 单词
  */
-data class OcrWord(
+data class ChenyiOcrWord(
     val text: String,
     val confidence: Float,
     val x: Int,
