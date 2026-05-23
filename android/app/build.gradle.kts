@@ -13,8 +13,8 @@ android {
         applicationId = "com.chenyi.agent"
         minSdk = 29
         targetSdk = 34
-versionCode = 10014
-        versionName = "1.0.14"
+versionCode = 10015
+        versionName = "1.0.15"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {

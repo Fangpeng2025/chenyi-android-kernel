@@ -1,7 +1,6 @@
 {
-  "versionCode": 10014,
-  "versionName": "1.0.14",
+  "versionCode": 10015,
+  "versionName": "1.0.15",
   "apkUrl": "https://oneapi.xintiandi.online/chenyi-agent/chenyi-agent-latest.apk",
-  "updateLog": "## v1.0.14 更新\n\n### 新增\n- ✅ 使用 RapidOCR4j-Android（内置模型，无需下载）\n- ✅ OCR 即开即用，无初始化等待\n\n### 修复\n- ✅ 修复聊天功能发送消息无响应问题\n- ✅ 移除截图权限检查，只需无障碍服务\n\n### 注意\n- ⚠️ 聊天功能需要先配置 API Key（设置页面）\n\n官网: https://xintiandi.online",
-  "forceUpdate": false
+  "updateLog": "## v1.0.15 更新\n\n### 新增\n- ✅ 合并 Peekaboo 核心能力到晨翼Agent\n- ✅ see() 功能 - 截图 + UI层级 + OCR 一体化\n- ✅ find_element() - 查找 UI 元素\n- ✅ click_element() - 点击 UI 元素\n- ✅ click_text() - 智能点击文本（无障碍+OCR双模式）\n- ✅ get_ui_tree() - 获取完整 UI 树\n\n### 改进\n- ✅ 无需 WebSocket，直接 JNI 调用\n- ✅ 更快的执行速度（减少通信开销）\n- ✅ 单一 APP，更简洁的架构\n\n### 技术细节\n- 整合 pengaboo-hanzi-ocr 的无障碍服务实现\n- 支持 30+ 工具（手势、文本、应用管理等）\n- UI 层级解析（最多 15 层深度）\n"
 }
