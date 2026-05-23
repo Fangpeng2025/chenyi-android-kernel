@@ -427,8 +427,13 @@ class ChenyiAccessibilityService : AccessibilityService() {
                 }
                 
                 if (isMatch) {
-                    val x = (word["x"] as? Number)?.toInt()?.let { it + (word["width"] as? Number)?.toInt()?.div(2) } ?: continue
-                    val y = (word["y"] as? Number)?.toInt()?.let { it + (word["height"] as? Number)?.toInt()?.div(2) } ?: continue
+                    val xVal = (word["x"] as? Number)?.toInt() ?: 0
+                    val widthVal = (word["width"] as? Number)?.toInt() ?: 0
+                    val yVal = (word["y"] as? Number)?.toInt() ?: 0
+                    val heightVal = (word["height"] as? Number)?.toInt() ?: 0
+                    
+                    val x = xVal + widthVal / 2
+                    val y = yVal + heightVal / 2
                     
                     return tap(JSONObject().apply {
                         put("x", x)
