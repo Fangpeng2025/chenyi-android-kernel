@@ -322,7 +322,6 @@ fun ChatScreen(
     
     // 待发送的消息（用于触发 LaunchedEffect）
     var pendingMessage by remember { mutableStateOf<String?>(null) }
-    val scope = rememberCoroutineScope()
     var hasShownApiKeyWarning by remember { mutableStateOf(false) }
     
     // API Key 未设置提示 - 只在首次进入聊天页面时显示
