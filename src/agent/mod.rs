@@ -65,8 +65,9 @@ impl AgentKernel {
         
         // 初始化上下文压缩器
         let compression_config = CompressionConfig::default();
+        let compression_threshold = compression_config.compression_threshold;
         let compressor = Arc::new(ContextCompressor::new(compression_config, llm.clone()));
-        log::info!("[Agent] 上下文压缩器已初始化 (阈值: {} tokens)", compression_config.compression_threshold);
+        log::info!("[Agent] 上下文压缩器已初始化 (阈值: {} tokens)", compression_threshold);
         
         // 初始化工具注册表
         let tools = Arc::new(ToolRegistry::new());

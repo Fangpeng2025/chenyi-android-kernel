@@ -46,9 +46,9 @@ impl ContextCompressor {
         let mut total_tokens = 0;
         
         for msg in messages {
-            let content = &msg.content;
-            let chinese_chars = content.chars().filter(|c| '\u{4e00}' <= *c && *c <= '\u{9fff}').count();
-            let other_chars = content.len().saturating_sub(chinese_chars);
+            let content_str = msg.content.as_deref().unwrap_or("");
+            let chinese_chars = content_str.chars().filter(|c| '\u{4e00}' <= *c && *c <= '\u{9fff}').count();
+            let other_chars = content_str.chars().count().saturating_sub(chinese_chars);
             
             // 中文: 约 1.5 字符/token
             // 英文/其他: 约 4 字符/token
@@ -140,7 +140,7 @@ impl ContextCompressor {
         // 添加摘要消息
         compressed.push(ChatMessage {
             role: "system".to_string(),
-            content: format!("[历史摘要]\n{}", compressed_summary),
+            content: Some(format!("[历史摘要]\n{}", compressed_summary)),
             tool_calls: None,
             tool_call_id: None,
         });
