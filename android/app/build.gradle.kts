@@ -9,12 +9,12 @@ android {
     namespace = "com.chenyi.agent"
     compileSdk = 34
 
-    defaultConfig {
+defaultConfig {
         applicationId = "com.chenyi.agent"
         minSdk = 29
         targetSdk = 34
-versionCode = 10015
-        versionName = "1.0.15"
+        versionCode = 10016
+        versionName = "1.0.16"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {

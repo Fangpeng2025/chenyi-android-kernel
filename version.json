@@ -1,6 +1,6 @@
 {
-  "versionCode": 10015,
-  "versionName": "1.0.15",
+  "versionCode": 10016,
+  "versionName": "1.0.16",
   "apkUrl": "https://oneapi.xintiandi.online/chenyi-agent/chenyi-agent-latest.apk",
-  "updateLog": "## v1.0.15 更新\n\n### 新增\n- ✅ 合并 Peekaboo 核心能力到晨翼Agent\n- ✅ see() 功能 - 截图 + UI层级 + OCR 一体化\n- ✅ find_element() - 查找 UI 元素\n- ✅ click_element() - 点击 UI 元素\n- ✅ click_text() - 智能点击文本（无障碍+OCR双模式）\n- ✅ get_ui_tree() - 获取完整 UI 树\n\n### 改进\n- ✅ 无需 WebSocket，直接 JNI 调用\n- ✅ 更快的执行速度（减少通信开销）\n- ✅ 单一 APP，更简洁的架构\n\n### 技术细节\n- 整合 pengaboo-hanzi-ocr 的无障碍服务实现\n- 支持 30+ 工具（手势、文本、应用管理等）\n- UI 层级解析（最多 15 层深度）\n"
+  "updateLog": "## v1.0.16 更新\n\n### 新增 (P2 后端功能)\n- ✅ 上下文压缩引擎 (ContextCompressor)\n- ✅ Token 估算与阈值触发机制\n- ✅ LLM 摘要压缩策略\n- ✅ 记忆管理持久化 (SQLite)\n- ✅ 记忆自动注入系统提示词\n- ✅ 流式输出接口 (StreamCallback)\n- ✅ Kotlin 协程集成 (chatStreamSuspend)\n- ✅ 压缩统计查询接口\n\n### 改进\n- ✅ 对话历史自动存储到长期记忆\n- ✅ 超过阈值自动压缩历史\n- ✅ 流式响应支持 onToken/onComplete/onError 回调\n\n### 技术细节\n- Rust 内核新增 compression 模块\n- AgentKernel 集成 ContextCompressor 和 MemoryEngine\n- JNI 新增 nativeChatStream 方法\n- 新增 CompressionStats 数据类\n"
 }
