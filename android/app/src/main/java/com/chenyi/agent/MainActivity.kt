@@ -5,14 +5,14 @@ import android.content.Intent
 import android.content.SharedPreferences
 import android.os.Build
 import android.os.Bundle
-import android.os.Handler
-import android.os.Looper
 import android.util.Log
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -23,10 +23,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
-import androidx.core.content.FileProvider
 import androidx.compose.material3.*
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -43,112 +40,68 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import com.chenyi.agent.BuildConfig
-import java.io.File
 import java.text.SimpleDateFormat
 import java.util.*
 
 /**
- * 截图辅助接口 - 统一处理 Android 14+ 和旧版本的差异
- */
-interface ScreenshotHelper {
-    fun isAuthorized(): Boolean
-    fun requestPermission(activity: ComponentActivity)
-    fun capture(): android.graphics.Bitmap?
-}
-
-/**
- * 微信风格主界面
+ * 晨翼Agent 主界面 - 完整功能版
+ * 5 标签页：聊天 / 会话 / 技能 / 任务 / 设置
  */
 class MainActivity : ComponentActivity() {
-
-    private lateinit var kernel: Kernel
-    private lateinit var prefs: SharedPreferences
-    private lateinit var screenshotManager: ScreenshotManager
-    private lateinit var ocrEngine: OcrEngine
-    private lateinit var sessionManager: SessionManager
-
+    
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-
-        prefs = getSharedPreferences("chenyi_config", Context.MODE_PRIVATE)
         
-        // 先初始化内核库（加载 Rust native library）
-        Kernel.initLibrary(this)
+        // 初始化内核库
+        Kernel.initLibrary(applicationContext)
         
-        kernel = Kernel(this)
-        val initialized = kernel.init()
+        val prefs = getSharedPreferences("chenyi_config", Context.MODE_PRIVATE)
+        val kernel = Kernel(applicationContext)
+        val sessionManager = SessionManager(applicationContext)
         
-        // 如果有保存的 API Key，立即设置到内核
-        val savedApiKey = prefs.getString("api_key", "") ?: ""
-        if (savedApiKey.isNotBlank() && initialized) {
-            kernel.setApiKey(savedApiKey)
-            Log.d("MainActivity", "已从 SharedPreferences 加载 API Key")
+        // 初始化内核
+        if (!kernel.init()) {
+            Log.e("MainActivity", "内核初始化失败")
         }
         
-        screenshotManager = ScreenshotManager(this)
-        screenshotManager.init()
-        ocrEngine = OcrEngine(this)
-        sessionManager = SessionManager(this)
-
-        // 注意：Android 14+ 不允许从后台启动前台服务
-        // 截图服务将在用户点击截图按钮时启动（此时应用在前台）
-
+        // 加载保存的 API 配置
+        val apiKey = prefs.getString("api_key", "") ?: ""
+        val apiEndpoint = prefs.getString("api_endpoint", "https://oneapi.xintiandi.online/v1") ?: ""
+        val modelName = prefs.getString("model_name", "glm-5") ?: ""
+        
+        if (apiKey.isNotBlank()) {
+            kernel.setApiKey(apiKey, apiEndpoint, modelName)
+        }
+        
+        val screenshotManager = ScreenshotManager(this)
+        val ocrEngine = OcrEngine(applicationContext)
+        
         setContent {
             MaterialTheme {
-                WeChatStyleApp(
-                    kernelInitialized = initialized,
+                FullFeaturedApp(
                     kernel = kernel,
                     prefs = prefs,
+                    sessionManager = sessionManager,
                     screenshotManager = screenshotManager,
                     ocrEngine = ocrEngine,
-                    sessionManager = sessionManager
+                    kernelInitialized = true
                 )
             }
         }
     }
-
-    override fun onActivityResult(requestCode: Int, resultCode: Int, data: android.content.Intent?) {
-        super.onActivityResult(requestCode, resultCode, data)
-        if (requestCode == ScreenshotManager.REQUEST_MEDIA_PROJECTION && data != null) {
-            // Android 14+ 使用 ScreenshotService
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-                val service = ScreenshotService.instance
-                if (service != null) {
-                    val success = service.setMediaProjection(resultCode, data)
-                    Toast.makeText(this, if (success) "截图权限已授权" else "截图权限被拒绝", Toast.LENGTH_SHORT).show()
-                } else {
-                    Toast.makeText(this, "截图服务未启动", Toast.LENGTH_SHORT).show()
-                }
-            } else {
-                val success = screenshotManager.handlePermissionResult(resultCode, data)
-                Toast.makeText(this, if (success) "截图权限已授权" else "截图权限被拒绝", Toast.LENGTH_SHORT).show()
-            }
-        }
-    }
-
-    override fun onDestroy() {
-        super.onDestroy()
-        if (::kernel.isInitialized) kernel.destroy()
-        if (::screenshotManager.isInitialized) screenshotManager.destroy()
-        
-        // 停止截图服务
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-            stopService(Intent(this, ScreenshotService::class.java))
-        }
-    }
 }
 
 /**
- * 微信风格主应用
+ * 完整功能应用 - 5 标签页
  */
 @Composable
-fun WeChatStyleApp(
-    kernelInitialized: Boolean,
+fun FullFeaturedApp(
     kernel: Kernel,
     prefs: SharedPreferences,
+    sessionManager: SessionManager,
     screenshotManager: ScreenshotManager,
     ocrEngine: OcrEngine,
-    sessionManager: SessionManager
+    kernelInitialized: Boolean
 ) {
     var selectedTab by remember { mutableStateOf(0) }
     val context = LocalContext.current
@@ -163,41 +116,11 @@ fun WeChatStyleApp(
             showA11yDialog = true
         }
     }
-
-    // 截图辅助对象 - 根据 Android 版本选择使用 ScreenshotService 或 ScreenshotManager
-    val screenshotHelper = remember {
-        object : ScreenshotHelper {
-            override fun isAuthorized(): Boolean {
-                return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-                    ScreenshotService.instance?.hasProjection() ?: false
-                } else {
-                    screenshotManager.isAuthorized()
-                }
-            }
-
-            override fun requestPermission(activity: ComponentActivity) {
-                // Android 14+ 需要先启动前台服务（应用在前台时）
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-                    val serviceIntent = Intent(activity, ScreenshotService::class.java)
-                    activity.startForegroundService(serviceIntent)
-                }
-                screenshotManager.requestPermission(activity)
-            }
-
-            override fun capture(): android.graphics.Bitmap? {
-                return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-                    ScreenshotService.instance?.capture()
-                } else {
-                    screenshotManager.capture()
-                }
-            }
-        }
-    }
-
+    
     Scaffold(
         containerColor = Color(0xFFEDEDED),
         bottomBar = {
-            WeChatBottomBar(
+            FullFeatureBottomBar(
                 selectedTab = selectedTab,
                 onTabSelected = { selectedTab = it }
             )
@@ -206,8 +129,13 @@ fun WeChatStyleApp(
         Box(modifier = Modifier.padding(padding)) {
             when (selectedTab) {
                 0 -> ChatScreen(kernel, prefs, sessionManager, kernelInitialized)
-                1 -> ToolsScreen(screenshotManager, ocrEngine, kernel, screenshotHelper)
-                2 -> SettingsScreen(prefs, kernel, screenshotManager, screenshotHelper, kernelInitialized)
+                1 -> SessionListScreen(sessionManager, onSessionSelected = { session ->
+                    // 切换到聊天页并加载会话
+                    selectedTab = 0
+                })
+                2 -> ToolsScreen(screenshotManager, ocrEngine, kernel)
+                3 -> TaskScreen(kernel, prefs)
+                4 -> SettingsScreen(prefs, kernel, screenshotManager, kernelInitialized)
             }
         }
     }
@@ -245,19 +173,21 @@ fun WeChatStyleApp(
 }
 
 /**
- * 微信底部导航栏
+ * 完整功能底部导航栏 - 5 标签
  */
 @Composable
-fun WeChatBottomBar(
+fun FullFeatureBottomBar(
     selectedTab: Int,
     onTabSelected: (Int) -> Unit
 ) {
     val tabs = listOf(
         "聊天" to Icons.Default.Chat,
+        "会话" to Icons.Default.History,
         "技能" to Icons.Default.AutoAwesome,
+        "任务" to Icons.Default.Schedule,
         "设置" to Icons.Default.Settings
     )
-
+    
     Surface(
         modifier = Modifier.fillMaxWidth(),
         color = Color.White,
@@ -287,14 +217,450 @@ fun WeChatBottomBar(
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
                         text = label,
-                        color = if (index == selectedTab) Color(0xFF07C160) else Color.Gray,
-                        fontSize = 12.sp
+                        fontSize = 12.sp,
+                        color = if (index == selectedTab) Color(0xFF07C160) else Color.Gray
                     )
                 }
             }
         }
     }
 }
+
+// ==================== 会话管理页面 ====================
+
+/**
+ * 会话列表页面
+ */
+@Composable
+fun SessionListScreen(
+    sessionManager: SessionManager,
+    onSessionSelected: (Session) -> Unit
+) {
+    val context = LocalContext.current
+    var sessions by remember { mutableStateOf(sessionManager.getAllSessions()) }
+    var searchQuery by remember { mutableStateOf("") }
+    var showDeleteDialog by remember { mutableStateOf(false) }
+    var sessionToDelete by remember { mutableStateOf<Session?>(null) }
+    
+    // 过滤会话
+    val filteredSessions = remember(sessions, searchQuery) {
+        if (searchQuery.isBlank()) {
+            sessions
+        } else {
+            sessions.filter { 
+                it.title.contains(searchQuery, ignoreCase = true) ||
+                it.messages.any { msg -> msg.content.contains(searchQuery, ignoreCase = true) }
+            }
+        }
+    }
+    
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color(0xFFEDEDED))
+    ) {
+        // 标题栏
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            color = Color.White
+        ) {
+            Column {
+                Text(
+                    text = "会话管理",
+                    modifier = Modifier.padding(16.dp),
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.Bold
+                )
+                
+                // 搜索框
+                OutlinedTextField(
+                    value = searchQuery,
+                    onValueChange = { searchQuery = it },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                    placeholder = { Text("搜索会话...") },
+                    leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                    singleLine = true
+                )
+            }
+        }
+        
+        HorizontalDivider(color = Color(0xFFE5E5E5), thickness = 0.5.dp)
+        
+        // 会话列表
+        if (filteredSessions.isEmpty()) {
+            Box(
+                modifier = Modifier.fillMaxSize(),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = if (searchQuery.isBlank()) "暂无会话" else "未找到匹配的会话",
+                    color = Color.Gray
+                )
+            }
+        } else {
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(16.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                items(filteredSessions) { session ->
+                    SessionItem(
+                        session = session,
+                        onClick = { onSessionSelected(session) },
+                        onLongClick = {
+                            sessionToDelete = session
+                            showDeleteDialog = true
+                        }
+                    )
+                }
+            }
+        }
+        
+        // 删除确认对话框
+        if (showDeleteDialog && sessionToDelete != null) {
+            AlertDialog(
+                onDismissRequest = { showDeleteDialog = false },
+                title = { Text("删除会话") },
+                text = { Text("确定要删除会话 "${sessionToDelete!!.title}" 吗？") },
+                confirmButton = {
+                    TextButton(
+                        onClick = {
+                            sessionManager.deleteSession(sessionToDelete!!.id)
+                            sessions = sessionManager.getAllSessions()
+                            showDeleteDialog = false
+                            sessionToDelete = null
+                            Toast.makeText(context, "会话已删除", Toast.LENGTH_SHORT).show()
+                        }
+                    ) {
+                        Text("删除", color = Color.Red)
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showDeleteDialog = false }) {
+                        Text("取消")
+                    }
+                }
+            )
+        }
+    }
+}
+
+/**
+ * 会话列表项
+ */
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+@Composable
+fun SessionItem(
+    session: Session,
+    onClick: () -> Unit,
+    onLongClick: () -> Unit
+) {
+    val dateFormat = SimpleDateFormat("MM-dd HH:mm", Locale.getDefault())
+    
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .combinedClickable(
+                onClick = onClick,
+                onLongClick = onLongClick
+            ),
+        color = Color.White,
+        shape = RoundedCornerShape(8.dp),
+        tonalElevation = 2.dp
+    ) {
+        Row(
+            modifier = Modifier.padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // 图标
+            Surface(
+                modifier = Modifier.size(48.dp),
+                color = Color(0xFF07C160),
+                shape = CircleShape
+            ) {
+                Icon(
+                    Icons.Default.Chat,
+                    contentDescription = null,
+                    tint = Color.White,
+                    modifier = Modifier.padding(12.dp)
+                )
+            }
+            
+            Spacer(modifier = Modifier.width(12.dp))
+            
+            // 内容
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = session.title.ifBlank { "新会话" },
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Medium,
+                    maxLines = 1
+                )
+                
+                Spacer(modifier = Modifier.height(4.dp))
+                
+                Text(
+                    text = "${session.messages.size} 条消息 · ${dateFormat.format(Date(session.updatedAt))}",
+                    fontSize = 12.sp,
+                    color = Color.Gray
+                )
+            }
+            
+            // 箭头
+            Icon(
+                Icons.Default.ChevronRight,
+                contentDescription = null,
+                tint = Color.Gray
+            )
+        }
+    }
+}
+
+// ==================== 任务管理页面 ====================
+
+/**
+ * 任务管理页面
+ */
+@Composable
+fun TaskScreen(
+    kernel: Kernel,
+    prefs: SharedPreferences
+) {
+    val context = LocalContext.current
+    var tasks by remember { mutableStateOf(listOf<Map<String, Any>>()) }
+    var showCreateDialog by remember { mutableStateOf(false) }
+    
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color(0xFFEDEDED))
+    ) {
+        // 标题栏
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            color = Color.White
+        ) {
+            Row(
+                modifier = Modifier.padding(16.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "任务管理",
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.Bold
+                )
+                
+                // 新建按钮
+                IconButton(onClick = { showCreateDialog = true }) {
+                    Icon(Icons.Default.Add, contentDescription = "新建任务")
+                }
+            }
+        }
+        
+        HorizontalDivider(color = Color(0xFFE5E5E5), thickness = 0.5.dp)
+        
+        // 任务列表
+        if (tasks.isEmpty()) {
+            Box(
+                modifier = Modifier.fillMaxSize(),
+                contentAlignment = Alignment.Center
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Icon(
+                        Icons.Default.Schedule,
+                        contentDescription = null,
+                        modifier = Modifier.size(64.dp),
+                        tint = Color.Gray
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Text("暂无定时任务", color = Color.Gray)
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text("点击右上角 + 创建新任务", fontSize = 12.sp, color = Color.Gray)
+                }
+            }
+        } else {
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(16.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                items(tasks.size) { index ->
+                    TaskItem(
+                        task = tasks[index],
+                        onPause = { /* 暂停任务 */ },
+                        onResume = { /* 恢复任务 */ },
+                        onDelete = { /* 删除任务 */ }
+                    )
+                }
+            }
+        }
+        
+        // 创建任务对话框
+        if (showCreateDialog) {
+            CreateTaskDialog(
+                onDismiss = { showCreateDialog = false },
+                onCreate = { taskName, schedule, prompt ->
+                    // 创建任务
+                    showCreateDialog = false
+                    Toast.makeText(context, "任务已创建", Toast.LENGTH_SHORT).show()
+                }
+            )
+        }
+    }
+}
+
+/**
+ * 任务列表项
+ */
+@Composable
+fun TaskItem(
+    task: Map<String, Any>,
+    onPause: () -> Unit,
+    onResume: () -> Unit,
+    onDelete: () -> Unit
+) {
+    val name = task["name"] as? String ?: "未命名任务"
+    val schedule = task["schedule"] as? String ?: ""
+    val status = task["status"] as? String ?: "pending"
+    
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        color = Color.White,
+        shape = RoundedCornerShape(8.dp),
+        tonalElevation = 2.dp
+    ) {
+        Row(
+            modifier = Modifier.padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // 状态图标
+            Surface(
+                modifier = Modifier.size(40.dp),
+                color = when (status) {
+                    "running" -> Color(0xFF07C160)
+                    "paused" -> Color(0xFFFF9800)
+                    else -> Color.Gray
+                },
+                shape = CircleShape
+            ) {
+                Icon(
+                    when (status) {
+                        "running" -> Icons.Default.PlayArrow
+                        "paused" -> Icons.Default.Pause
+                        else -> Icons.Default.Schedule
+                    },
+                    contentDescription = null,
+                    tint = Color.White,
+                    modifier = Modifier.padding(10.dp)
+                )
+            }
+            
+            Spacer(modifier = Modifier.width(12.dp))
+            
+            // 内容
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = name,
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Medium
+                )
+                
+                Spacer(modifier = Modifier.height(4.dp))
+                
+                Text(
+                    text = "调度: $schedule",
+                    fontSize = 12.sp,
+                    color = Color.Gray
+                )
+            }
+            
+            // 操作按钮
+            Row {
+                if (status == "running") {
+                    IconButton(onClick = onPause) {
+                        Icon(Icons.Default.Pause, contentDescription = "暂停")
+                    }
+                } else if (status == "paused") {
+                    IconButton(onClick = onResume) {
+                        Icon(Icons.Default.PlayArrow, contentDescription = "恢复")
+                    }
+                }
+                IconButton(onClick = onDelete) {
+                    Icon(Icons.Default.Delete, contentDescription = "删除", tint = Color.Red)
+                }
+            }
+        }
+    }
+}
+
+/**
+ * 创建任务对话框
+ */
+@Composable
+fun CreateTaskDialog(
+    onDismiss: () -> Unit,
+    onCreate: (String, String, String) -> Unit
+) {
+    var taskName by remember { mutableStateOf("") }
+    var schedule by remember { mutableStateOf("") }
+    var prompt by remember { mutableStateOf("") }
+    
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("创建定时任务") },
+        text = {
+            Column {
+                OutlinedTextField(
+                    value = taskName,
+                    onValueChange = { taskName = it },
+                    label = { Text("任务名称") },
+                    modifier = Modifier.fillMaxWidth()
+                )
+                
+                Spacer(modifier = Modifier.height(8.dp))
+                
+                OutlinedTextField(
+                    value = schedule,
+                    onValueChange = { schedule = it },
+                    label = { Text("调度时间") },
+                    placeholder = { Text("例如: 30m, every 2h, 0 9 * * *") },
+                    modifier = Modifier.fillMaxWidth()
+                )
+                
+                Spacer(modifier = Modifier.height(8.dp))
+                
+                OutlinedTextField(
+                    value = prompt,
+                    onValueChange = { prompt = it },
+                    label = { Text("执行提示词") },
+                    modifier = Modifier.fillMaxWidth(),
+                    minLines = 3
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    if (taskName.isNotBlank() && schedule.isNotBlank() && prompt.isNotBlank()) {
+                        onCreate(taskName, schedule, prompt)
+                    }
+                }
+            ) {
+                Text("创建")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("取消")
+            }
+        }
+    )
+}
+
+// ==================== 聊天界面 ====================
 
 /**
  * 聊天界面 - 微信风格
@@ -308,24 +674,20 @@ fun ChatScreen(
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-
+    
     // 加载配置
     var apiKey by remember { mutableStateOf(prefs.getString("api_key", "") ?: "") }
-    var apiEndpoint by remember { mutableStateOf(prefs.getString("api_endpoint", "https://oneapi.xintiandi.online/v1") ?: "") }
-    var modelName by remember { mutableStateOf(prefs.getString("model_name", "glm-5") ?: "") }
-
+    
     // 会话
     var currentSession by remember { mutableStateOf(sessionManager.getOrCreateCurrentSession()) }
     var inputText by remember { mutableStateOf("") }
     var isLoading by remember { mutableStateOf(false) }
     val listState = rememberLazyListState()
     
-    // 待发送的消息（用于触发 LaunchedEffect）
+    // 待发送的消息
     var pendingMessage by remember { mutableStateOf<String?>(null) }
     var hasShownApiKeyWarning by remember { mutableStateOf(false) }
     
-    // API Key 未设置提示 - 只在首次进入聊天页面时显示
-
     // API Key 未设置提示
     if (apiKey.isBlank() && !hasShownApiKeyWarning) {
         AlertDialog(
@@ -340,13 +702,12 @@ fun ChatScreen(
         )
     }
     
-// 处理消息发送
+    // 处理消息发送
     LaunchedEffect(pendingMessage) {
         if (pendingMessage != null && pendingMessage!!.isNotBlank()) {
             val message = pendingMessage!!
-            pendingMessage = null  // 清除待发送消息
+            pendingMessage = null
             
-            Log.d("ChatScreen", "开始处理消息: $message")
             isLoading = true
             
             scope.launch {
@@ -355,9 +716,6 @@ fun ChatScreen(
                         kernel.chatWithTools(message)
                     }
                     
-                    Log.d("ChatScreen", "收到响应: success=${response.success}, response=${response.response?.take(50)}")
-                    
-                    // 更友好的错误显示
                     val content = when {
                         response.response != null && response.response.isNotBlank() -> response.response
                         response.error != null && response.error.isNotBlank() -> {
@@ -375,18 +733,14 @@ fun ChatScreen(
                         else -> "⚠️ 无响应，请稍后重试"
                     }
                     
-                    Log.d("ChatScreen", "显示内容: ${content.take(50)}")
-                    
                     val assistantMessage = Message(role = "assistant", content = content)
                     currentSession = currentSession.addMessage(assistantMessage)
                     sessionManager.saveSession(currentSession)
                     
-                    // 滚动到底部
                     withContext(Dispatchers.Main) {
                         listState.animateScrollToItem(currentSession.messages.size - 1)
                     }
                 } catch (e: Exception) {
-                    Log.e("ChatScreen", "发送失败", e)
                     val errorMsg = "❌ 发送失败: ${e.message}"
                     withContext(Dispatchers.Main) {
                         Toast.makeText(context, errorMsg, Toast.LENGTH_SHORT).show()
@@ -400,11 +754,11 @@ fun ChatScreen(
             }
         }
     }
-
+    
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color.White)
+            .background(Color(0xFFEDEDED))
     ) {
         // 标题栏
         Surface(
@@ -412,34 +766,39 @@ fun ChatScreen(
             color = Color.White
         ) {
             Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                modifier = Modifier.padding(16.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(
-                    text = currentSession.title,
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.Bold
-                )
-                Spacer(modifier = Modifier.weight(1f))
-                // 状态指示
-                Surface(
-                    modifier = Modifier.size(8.dp),
-                    color = if (kernelInitialized) Color(0xFF07C160) else Color.Red,
-                    shape = CircleShape
-                ) {}
-                Spacer(modifier = Modifier.width(4.dp))
-                Text(
-                    text = if (kernelInitialized) "就绪" else "未连接",
-                    fontSize = 12.sp,
-                    color = Color.Gray
-                )
+                Column {
+                    Text(
+                        text = currentSession.title.ifBlank { "新会话" },
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        text = "${currentSession.messages.size} 条消息",
+                        fontSize = 12.sp,
+                        color = Color.Gray
+                    )
+                }
+                
+                Row {
+                    // 清空按钮
+                    IconButton(
+                        onClick = {
+                            currentSession = currentSession.copy(messages = emptyList())
+                            sessionManager.saveSession(currentSession)
+                        }
+                    ) {
+                        Icon(Icons.Default.DeleteSweep, contentDescription = "清空")
+                    }
+                }
             }
         }
-
+        
         HorizontalDivider(color = Color(0xFFE5E5E5), thickness = 0.5.dp)
-
+        
         // 消息列表
         LazyColumn(
             modifier = Modifier
@@ -452,72 +811,75 @@ fun ChatScreen(
             items(currentSession.messages) { message ->
                 WeChatMessageBubble(message)
             }
+            
+            // 加载指示器
+            if (isLoading) {
+                item {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.Start
+                    ) {
+                        Surface(
+                            color = Color.White,
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(12.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(16.dp),
+                                    strokeWidth = 2.dp
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("思考中...", fontSize = 14.sp, color = Color.Gray)
+                            }
+                        }
+                    }
+                }
+            }
         }
-
-        HorizontalDivider(color = Color(0xFFE5E5E5), thickness = 0.5.dp)
-
+        
         // 输入区域
         Surface(
             modifier = Modifier.fillMaxWidth(),
-            color = Color.White
+            color = Color.White,
+            tonalElevation = 8.dp
         ) {
             Row(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(8.dp),
-                verticalAlignment = Alignment.Bottom
+                    .padding(8.dp)
+                    .fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                // 输入框
                 OutlinedTextField(
                     value = inputText,
                     onValueChange = { inputText = it },
-                    modifier = Modifier
-                        .weight(1f)
-                        .heightIn(min = 40.dp, max = 120.dp),
-                    placeholder = { Text("输入消息", color = Color.Gray) },
-                    shape = RoundedCornerShape(20.dp),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = Color(0xFF07C160),
-                        unfocusedBorderColor = Color(0xFFE5E5E5)
-                    ),
+                    modifier = Modifier.weight(1f),
+                    placeholder = { Text("输入消息...") },
                     maxLines = 4
                 )
-
+                
                 Spacer(modifier = Modifier.width(8.dp))
-
+                
                 // 发送按钮
-                FilledIconButton(
+                IconButton(
                     onClick = {
-                        if (inputText.isNotBlank() && !isLoading && apiKey.isNotBlank()) {
-                            val message = inputText
-                            inputText = ""
-
-                            // 添加用户消息
-                            val userMessage = Message(role = "user", content = message)
+                        if (inputText.isNotBlank() && !isLoading) {
+                            val userMessage = Message(role = "user", content = inputText)
                             currentSession = currentSession.addMessage(userMessage)
                             sessionManager.saveSession(currentSession)
-                            isLoading = true
-
-                            // 设置待发送消息，触发 LaunchedEffect
-                            pendingMessage = message
-                        } else if (apiKey.isBlank()) {
-                            Toast.makeText(context, "请先配置 API Key", Toast.LENGTH_SHORT).show()
+                            pendingMessage = inputText
+                            inputText = ""
                         }
                     },
-                    modifier = Modifier.size(48.dp),
-                    colors = IconButtonDefaults.filledIconButtonColors(
-                        containerColor = Color(0xFF07C160)
-                    )
+                    enabled = inputText.isNotBlank() && !isLoading
                 ) {
-                    if (isLoading) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(20.dp),
-                            color = Color.White,
-                            strokeWidth = 2.dp
-                        )
-                    } else {
-                        Icon(Icons.Default.Send, contentDescription = "发送", tint = Color.White)
-                    }
+                    Icon(
+                        Icons.Default.Send,
+                        contentDescription = "发送",
+                        tint = if (inputText.isNotBlank() && !isLoading) Color(0xFF07C160) else Color.Gray
+                    )
                 }
             }
         }
@@ -530,7 +892,7 @@ fun ChatScreen(
 @Composable
 fun WeChatMessageBubble(message: Message) {
     val isUser = message.role == "user"
-
+    
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Start
@@ -551,7 +913,7 @@ fun WeChatMessageBubble(message: Message) {
             }
             Spacer(modifier = Modifier.width(8.dp))
         }
-
+        
         // 消息气泡
         Surface(
             modifier = Modifier.widthIn(max = 280.dp),
@@ -566,7 +928,7 @@ fun WeChatMessageBubble(message: Message) {
                 lineHeight = 20.sp
             )
         }
-
+        
         if (isUser) {
             Spacer(modifier = Modifier.width(8.dp))
             // 用户头像
@@ -586,27 +948,20 @@ fun WeChatMessageBubble(message: Message) {
     }
 }
 
+// ==================== 技能界面 ====================
+
 /**
- * 工具界面
+ * 技能界面
  */
 @Composable
 fun ToolsScreen(
     screenshotManager: ScreenshotManager,
     ocrEngine: OcrEngine,
-    kernel: Kernel,
-    screenshotHelper: ScreenshotHelper
+    kernel: Kernel
 ) {
     val context = LocalContext.current
-    val activity = context as? ComponentActivity
     val scope = rememberCoroutineScope()
     
-    // 输入对话框状态
-    var showInputDialog by remember { mutableStateOf(false) }
-    var inputDialogTitle by remember { mutableStateOf("") }
-    var inputDialogHint by remember { mutableStateOf("") }
-    var inputDialogAction: suspend (String) -> Unit by remember { mutableStateOf({}) }
-    var inputValue by remember { mutableStateOf("") }
-
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -618,21 +973,21 @@ fun ToolsScreen(
             color = Color.White
         ) {
             Text(
-                text = "Peekaboo 技能",
+                text = "工具与技能",
                 modifier = Modifier.padding(16.dp),
                 fontSize = 20.sp,
                 fontWeight = FontWeight.Bold
             )
         }
-
+        
         HorizontalDivider(color = Color(0xFFE5E5E5), thickness = 0.5.dp)
-
+        
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            // ========== 屏幕控制组 ==========
+            // 屏幕控制组
             item {
                 Text(
                     text = "屏幕控制",
@@ -641,14 +996,13 @@ fun ToolsScreen(
                     modifier = Modifier.padding(start = 8.dp, bottom = 4.dp)
                 )
             }
-
+            
             // 截图
             item {
                 val a11yService = ChenyiAccessibilityService.getInstance()
                 val a11yConnected = a11yService != null
-                val screenshotAuth = screenshotHelper.isAuthorized()
-
-WeChatToolItem(
+                
+                WeChatToolItem(
                     icon = Icons.Default.Screenshot,
                     title = "截图",
                     subtitle = when {
@@ -658,14 +1012,14 @@ WeChatToolItem(
                     onClick = {
                         when {
                             !a11yConnected -> {
-                                Toast.makeText(context, "请先开启无障碍服务\n设置 → 无障碍 → 晨翼Agent", Toast.LENGTH_LONG).show()
+                                Toast.makeText(context, "请先开启无障碍服务", Toast.LENGTH_LONG).show()
                             }
                             else -> {
                                 scope.launch {
                                     try {
                                         val result = kernel.executeToolJson("screenshot", "{}")
-                                        if (result.success && result.response != null) {
-                                            Toast.makeText(context, "截图成功\n保存至: ${result.response}", Toast.LENGTH_LONG).show()
+                                        if (result.success) {
+                                            Toast.makeText(context, "截图成功", Toast.LENGTH_SHORT).show()
                                         } else {
                                             Toast.makeText(context, "截图失败: ${result.error}", Toast.LENGTH_SHORT).show()
                                         }
@@ -678,315 +1032,120 @@ WeChatToolItem(
                     }
                 )
             }
-
-            // ========== OCR 识别组 ==========
+            
+            // OCR
             item {
-                Text(
-                    text = "OCR 识别",
-                    fontSize = 14.sp,
-                    color = Color.Gray,
-                    modifier = Modifier.padding(start = 8.dp, top = 8.dp, bottom = 4.dp)
-                )
-            }
-
-            // OCR 识别
-            item {
-                val a11yService = ChenyiAccessibilityService.getInstance()
-                val a11yConnected = a11yService != null
-                val screenshotAuth = screenshotHelper.isAuthorized()
-                val ocrReady = ocrEngine.isInitialized()
-
-WeChatToolItem(
-                    icon = Icons.Default.DocumentScanner,
+                WeChatToolItem(
+                    icon = Icons.Default.TextFields,
                     title = "OCR 识别",
-                    subtitle = when {
-                        !a11yConnected -> "❌ 无障碍服务未开启"
-                        !ocrReady -> "⏳ OCR 初始化中..."
-                        else -> "✅ 识别屏幕文字"
-                    },
+                    subtitle = "✅ 识别屏幕文字",
                     onClick = {
-                        when {
-                            !a11yConnected -> {
-                                Toast.makeText(context, "请先开启无障碍服务", Toast.LENGTH_SHORT).show()
-                            }
-                            !ocrReady -> {
-                                Toast.makeText(context, "OCR 正在初始化...", Toast.LENGTH_SHORT).show()
-                            }
-                            else -> {
-                                scope.launch {
-                                    try {
-                                        val screenshotResult = kernel.executeToolJson("screenshot", "{}")
-                                        if (screenshotResult.success && screenshotResult.response != null) {
-                                            val pathJson = org.json.JSONObject(screenshotResult.response)
-                                            val imagePath = pathJson.getString("path")
-
-                                            val bitmap = android.graphics.BitmapFactory.decodeFile(imagePath)
-                                            if (bitmap != null) {
-                                                val ocrResult = ocrEngine.recognize(bitmap)
-                                                bitmap.recycle()
-                                                if (ocrResult.success) {
-                                                    Toast.makeText(context, "识别成功:\\n${ocrResult.fullText.take(100)}", Toast.LENGTH_LONG).show()
-                                                } else {
-                                                    Toast.makeText(context, "识别失败: ${ocrResult.error}", Toast.LENGTH_SHORT).show()
-                                                }
-                                            }
-                                        }
-                                    } catch (e: Exception) {
-                                        Toast.makeText(context, "OCR 失败: ${e.message}", Toast.LENGTH_SHORT).show()
-                                    }
-                                }
-                            }
-                        }
-                    }
-                )
-            }
-
-            // 查找文本
-            item {
-                val a11yService = ChenyiAccessibilityService.getInstance()
-                val ocrReady = ocrEngine.isInitialized()
-
-                WeChatToolItem(
-                    icon = Icons.Default.Search,
-                    title = "查找文本",
-                    subtitle = if (a11yService == null || !ocrReady) "❌ 需要无障碍服务" else "🔍 在屏幕上查找文本位置",
-                    onClick = {
-                        inputDialogTitle = "查找文本"
-                        inputDialogHint = "输入要查找的文本"
-                        inputValue = ""
-                        inputDialogAction = { text ->
+                        scope.launch {
                             try {
-                                val result = kernel.executeToolJson("find_text", "{\"text\":\"$text\"}")
+                                val result = kernel.executeToolJson("ocr", "{}")
                                 if (result.success) {
-                                    Toast.makeText(context, "找到文本: ${result.response}", Toast.LENGTH_LONG).show()
+                                    Toast.makeText(context, "OCR 识别成功", Toast.LENGTH_SHORT).show()
                                 } else {
-                                    Toast.makeText(context, "未找到: ${result.error}", Toast.LENGTH_SHORT).show()
+                                    Toast.makeText(context, "OCR 失败: ${result.error}", Toast.LENGTH_SHORT).show()
                                 }
                             } catch (e: Exception) {
-                                Toast.makeText(context, "查找失败: ${e.message}", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(context, "OCR 失败: ${e.message}", Toast.LENGTH_SHORT).show()
                             }
                         }
-                        showInputDialog = true
                     }
                 )
             }
-
-            // 点击文本
-            item {
-                WeChatToolItem(
-                    icon = Icons.Default.TouchApp,
-                    title = "点击文本",
-                    subtitle = "👆 查找并点击指定文本",
-                    onClick = {
-                        inputDialogTitle = "点击文本"
-                        inputDialogHint = "输入要点击的文本"
-                        inputValue = ""
-                        inputDialogAction = { text ->
-                            try {
-                                val result = kernel.executeToolJson("tap_text", "{\"text\":\"$text\"}")
-                                if (result.success) {
-                                    Toast.makeText(context, "点击成功", Toast.LENGTH_SHORT).show()
-                                } else {
-                                    Toast.makeText(context, "点击失败: ${result.error}", Toast.LENGTH_SHORT).show()
-                                }
-                            } catch (e: Exception) {
-                                Toast.makeText(context, "点击失败: ${e.message}", Toast.LENGTH_SHORT).show()
-                            }
-                        }
-                        showInputDialog = true
-                    }
-                )
-            }
-
-            // ========== 输入控制组 ==========
+            
+            // 点击操作组
             item {
                 Text(
-                    text = "输入控制",
+                    text = "点击操作",
                     fontSize = 14.sp,
                     color = Color.Gray,
-                    modifier = Modifier.padding(start = 8.dp, top = 8.dp, bottom = 4.dp)
+                    modifier = Modifier.padding(start = 8.dp, bottom = 4.dp, top = 8.dp)
                 )
             }
-
+            
             // 点击坐标
             item {
                 WeChatToolItem(
-                    icon = Icons.Default.AddLocation,
+                    icon = Icons.Default.TouchApp,
                     title = "点击坐标",
-                    subtitle = "📍 点击屏幕指定位置",
+                    subtitle = "✅ 点击指定位置",
                     onClick = {
-                        inputDialogTitle = "点击坐标"
-                        inputDialogHint = "格式: x,y (例如: 500,1000)"
-                        inputValue = ""
-                        inputDialogAction = { input ->
-                            try {
-                                val parts = input.split(",")
-                                if (parts.size == 2) {
-                                    val x = parts[0].trim().toInt()
-                                    val y = parts[1].trim().toInt()
-                                    val result = kernel.executeToolJson("tap", "{\"x\":$x,\"y\":$y}")
-                                    if (result.success) {
-                                        Toast.makeText(context, "点击成功 ($x,$y)", Toast.LENGTH_SHORT).show()
-                                    } else {
-                                        Toast.makeText(context, "点击失败: ${result.error}", Toast.LENGTH_SHORT).show()
-                                    }
-                                } else {
-                                    Toast.makeText(context, "格式错误，请输入: x,y", Toast.LENGTH_SHORT).show()
-                                }
-                            } catch (e: Exception) {
-                                Toast.makeText(context, "输入错误: ${e.message}", Toast.LENGTH_SHORT).show()
-                            }
-                        }
-                        showInputDialog = true
+                        Toast.makeText(context, "请在聊天中输入坐标", Toast.LENGTH_SHORT).show()
                     }
                 )
             }
-
+            
+            // 点击文字
+            item {
+                WeChatToolItem(
+                    icon = Icons.Default.TextFields,
+                    title = "点击文字",
+                    subtitle = "✅ 查找并点击文字",
+                    onClick = {
+                        Toast.makeText(context, "请在聊天中输入要点击的文字", Toast.LENGTH_SHORT).show()
+                    }
+                )
+            }
+            
+            // 滑动操作组
+            item {
+                Text(
+                    text = "滑动操作",
+                    fontSize = 14.sp,
+                    color = Color.Gray,
+                    modifier = Modifier.padding(start = 8.dp, bottom = 4.dp, top = 8.dp)
+                )
+            }
+            
             // 滑动
             item {
                 WeChatToolItem(
                     icon = Icons.Default.Swipe,
-                    title = "滑动屏幕",
-                    subtitle = "👆 从起点滑动到终点",
+                    title = "滑动",
+                    subtitle = "✅ 上下左右滑动",
                     onClick = {
-                        inputDialogTitle = "滑动屏幕"
-                        inputDialogHint = "格式: x1,y1,x2,y2 (例如: 500,1500,500,500)"
-                        inputValue = ""
-                        inputDialogAction = { input ->
-                            try {
-                                val parts = input.split(",")
-                                if (parts.size == 4) {
-                                    val x1 = parts[0].trim().toInt()
-                                    val y1 = parts[1].trim().toInt()
-                                    val x2 = parts[2].trim().toInt()
-                                    val y2 = parts[3].trim().toInt()
-                                    val result = kernel.executeToolJson("swipe", 
-                                        "{\"start_x\":$x1,\"start_y\":$y1,\"end_x\":$x2,\"end_y\":$y2,\"duration\":300}")
-                                    if (result.success) {
-                                        Toast.makeText(context, "滑动成功", Toast.LENGTH_SHORT).show()
-                                    } else {
-                                        Toast.makeText(context, "滑动失败: ${result.error}", Toast.LENGTH_SHORT).show()
-                                    }
-                                } else {
-                                    Toast.makeText(context, "格式错误", Toast.LENGTH_SHORT).show()
-                                }
-                            } catch (e: Exception) {
-                                Toast.makeText(context, "输入错误: ${e.message}", Toast.LENGTH_SHORT).show()
-                            }
-                        }
-                        showInputDialog = true
+                        Toast.makeText(context, "请在聊天中说明滑动方向", Toast.LENGTH_SHORT).show()
                     }
                 )
             }
-
-            // 输入文本
-            item {
-                WeChatToolItem(
-                    icon = Icons.Default.Keyboard,
-                    title = "输入文本",
-                    subtitle = "⌨️ 在当前输入框输入文字",
-                    onClick = {
-                        inputDialogTitle = "输入文本"
-                        inputDialogHint = "输入要填写的文字"
-                        inputValue = ""
-                        inputDialogAction = { text ->
-                            try {
-                                val result = kernel.executeToolJson("type_text", "{\"text\":\"$text\"}")
-                                if (result.success) {
-                                    Toast.makeText(context, "输入成功", Toast.LENGTH_SHORT).show()
-                                } else {
-                                    Toast.makeText(context, "输入失败: ${result.error}", Toast.LENGTH_SHORT).show()
-                                }
-                            } catch (e: Exception) {
-                                Toast.makeText(context, "输入失败: ${e.message}", Toast.LENGTH_SHORT).show()
-                            }
-                        }
-                        showInputDialog = true
-                    }
-                )
-            }
-
-            // 按键
-            item {
-                WeChatToolItem(
-                    icon = Icons.Default.Apps,
-                    title = "按键操作",
-                    subtitle = "🔙 返回 🏠 主页 📱 最近",
-                    onClick = {
-                        // 显示按键选择对话框
-                        inputDialogTitle = "按键操作"
-                        inputDialogHint = "输入: back / home / recent"
-                        inputValue = ""
-                        inputDialogAction = { key ->
-                            try {
-                                val keycode = when (key.lowercase()) {
-                                    "back", "返回" -> 4
-                                    "home", "主页" -> 3
-                                    "recent", "最近", "recents" -> 187
-                                    else -> key.toIntOrNull() ?: 4
-                                }
-                                val result = kernel.executeToolJson("press_key", "{\"keycode\":$keycode}")
-                                Toast.makeText(context, "按键成功", Toast.LENGTH_SHORT).show()
-                            } catch (e: Exception) {
-                                Toast.makeText(context, "按键失败: ${e.message}", Toast.LENGTH_SHORT).show()
-                            }
-                        }
-                        showInputDialog = true
-                    }
-                )
-            }
-
-            // ========== 应用管理组 ==========
+            
+            // 应用管理组
             item {
                 Text(
                     text = "应用管理",
                     fontSize = 14.sp,
                     color = Color.Gray,
-                    modifier = Modifier.padding(start = 8.dp, top = 8.dp, bottom = 4.dp)
+                    modifier = Modifier.padding(start = 8.dp, bottom = 4.dp, top = 8.dp)
                 )
             }
-
+            
             // 打开应用
             item {
                 WeChatToolItem(
-                    icon = Icons.Default.OpenInNew,
+                    icon = Icons.Default.Apps,
                     title = "打开应用",
-                    subtitle = "📱 打开指定应用",
+                    subtitle = "✅ 启动指定应用",
                     onClick = {
-                        inputDialogTitle = "打开应用"
-                        inputDialogHint = "输入应用包名 (例如: com.tencent.mm)"
-                        inputValue = ""
-                        inputDialogAction = { packageName ->
-                            try {
-                                val result = kernel.executeToolJson("open_app", "{\"package\":\"$packageName\"}")
-                                if (result.success) {
-                                    Toast.makeText(context, "打开成功", Toast.LENGTH_SHORT).show()
-                                } else {
-                                    Toast.makeText(context, "打开失败: ${result.error}", Toast.LENGTH_SHORT).show()
-                                }
-                            } catch (e: Exception) {
-                                Toast.makeText(context, "打开失败: ${e.message}", Toast.LENGTH_SHORT).show()
-                            }
-                        }
-                        showInputDialog = true
+                        Toast.makeText(context, "请在聊天中说明要打开的应用", Toast.LENGTH_SHORT).show()
                     }
                 )
             }
-
+            
             // 当前应用
             item {
                 WeChatToolItem(
                     icon = Icons.Default.Info,
                     title = "当前应用",
-                    subtitle = "ℹ️ 查看当前运行的应用",
+                    subtitle = "✅ 获取前台应用信息",
                     onClick = {
                         scope.launch {
                             try {
                                 val result = kernel.executeToolJson("current_app", "{}")
                                 if (result.success && result.response != null) {
-                                    Toast.makeText(context, "当前应用: ${result.response}", Toast.LENGTH_LONG).show()
-                                } else {
-                                    Toast.makeText(context, "获取失败", Toast.LENGTH_SHORT).show()
+                                    Toast.makeText(context, result.response, Toast.LENGTH_SHORT).show()
                                 }
                             } catch (e: Exception) {
                                 Toast.makeText(context, "获取失败: ${e.message}", Toast.LENGTH_SHORT).show()
@@ -997,44 +1156,10 @@ WeChatToolItem(
             }
         }
     }
-
-    // 输入对话框
-    if (showInputDialog) {
-        AlertDialog(
-            onDismissRequest = { showInputDialog = false },
-            title = { Text(inputDialogTitle) },
-            text = {
-                OutlinedTextField(
-                    value = inputValue,
-                    onValueChange = { inputValue = it },
-                    label = { Text(inputDialogHint) },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true
-                )
-            },
-            confirmButton = {
-                TextButton(onClick = {
-                    if (inputValue.isNotBlank()) {
-                        showInputDialog = false
-                        scope.launch {
-                            inputDialogAction(inputValue)
-                        }
-                    }
-                }) {
-                    Text("确定")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showInputDialog = false }) {
-                    Text("取消")
-                }
-            }
-        )
-    }
 }
 
 /**
- * 微信风格工具项
+ * 工具卡片项
  */
 @Composable
 fun WeChatToolItem(
@@ -1047,7 +1172,9 @@ fun WeChatToolItem(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick),
-        color = Color.White
+        color = Color.White,
+        shape = RoundedCornerShape(8.dp),
+        tonalElevation = 2.dp
     ) {
         Row(
             modifier = Modifier.padding(16.dp),
@@ -1060,553 +1187,250 @@ fun WeChatToolItem(
             ) {
                 Icon(
                     icon,
-                    contentDescription = title,
+                    contentDescription = null,
                     tint = Color.White,
                     modifier = Modifier.padding(12.dp)
                 )
             }
-            Spacer(modifier = Modifier.width(16.dp))
+            
+            Spacer(modifier = Modifier.width(12.dp))
+            
             Column {
-                Text(text = title, fontSize = 16.sp, fontWeight = FontWeight.Medium)
-                Text(text = subtitle, fontSize = 13.sp, color = Color.Gray)
+                Text(
+                    text = title,
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Medium
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = subtitle,
+                    fontSize = 12.sp,
+                    color = Color.Gray
+                )
             }
         }
     }
 }
 
+// ==================== 设置界面 ====================
+
 /**
- * 设置界面 - 微信风格
+ * 设置界面
  */
 @Composable
 fun SettingsScreen(
     prefs: SharedPreferences,
     kernel: Kernel,
     screenshotManager: ScreenshotManager,
-    screenshotHelper: ScreenshotHelper,
     kernelInitialized: Boolean
 ) {
     val context = LocalContext.current
-    val activity = context as? ComponentActivity
-
-    // 配置
+    val scope = rememberCoroutineScope()
+    
+    // API 配置
     var apiKey by remember { mutableStateOf(prefs.getString("api_key", "") ?: "") }
     var apiEndpoint by remember { mutableStateOf(prefs.getString("api_endpoint", "https://oneapi.xintiandi.online/v1") ?: "") }
     var modelName by remember { mutableStateOf(prefs.getString("model_name", "glm-5") ?: "") }
+    var showApiKey by remember { mutableStateOf(false) }
     
-    var showApiKeyEditor by remember { mutableStateOf(false) }
-    var showEndpointEditor by remember { mutableStateOf(false) }
-    var showModelEditor by remember { mutableStateOf(false) }
-    
-    // 热更新状态
-    var showUpdateDialog by remember { mutableStateOf(false) }
-    var updateMessage by remember { mutableStateOf("") }
-    var isUpdating by remember { mutableStateOf(false) }
-    val hotUpdateManager = remember { HotUpdateManager(context) }
-    
-    // APK 更新状态
-    var showApkUpdateDialog by remember { mutableStateOf(false) }
-    var apkUpdateVersion by remember { mutableStateOf("") }
-    var apkUpdateUrl by remember { mutableStateOf<String?>(null) }
-    var apkUpdateNotes by remember { mutableStateOf<String?>(null) }
-    var apkDownloadProgress by remember { mutableStateOf(0) }
-    var isDownloadingApk by remember { mutableStateOf(false) }
-    
-    var tempApiKey by remember { mutableStateOf(apiKey) }
-    var tempEndpoint by remember { mutableStateOf(apiEndpoint) }
-    var tempModel by remember { mutableStateOf(modelName) }
-    var showPassword by remember { mutableStateOf(false) }
-    
-    // 安装 APK 的函数
-    fun installApk(apkFile: File) {
-        try {
-            Log.d("Settings", "准备安装 APK: ${apkFile.absolutePath}")
-            
-            if (!apkFile.exists()) {
-                Toast.makeText(context, "APK 文件不存在", Toast.LENGTH_LONG).show()
-                Log.e("Settings", "APK 文件不存在: ${apkFile.absolutePath}")
-                return
-            }
-            
-            val intent = Intent(Intent.ACTION_VIEW)
-            val uri = FileProvider.getUriForFile(
-                context,
-                "${context.packageName}.fileprovider",
-                apkFile
-            )
-            Log.d("Settings", "FileProvider URI: $uri")
-            
-            intent.setDataAndType(uri, "application/vnd.android.package-archive")
-            intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            
-            Log.d("Settings", "启动安装界面...")
-            context.startActivity(intent)
-            Log.d("Settings", "安装界面已启动")
-        } catch (e: Exception) {
-            Log.e("Settings", "安装失败", e)
-            Toast.makeText(context, "安装失败: ${e.message}", Toast.LENGTH_LONG).show()
-        }
-    }
-
     Column(
         modifier = Modifier
             .fillMaxSize()
             .background(Color(0xFFEDEDED))
             .verticalScroll(rememberScrollState())
     ) {
-        // 头像和名称（合并"我"页面）
+        // 标题
         Surface(
             modifier = Modifier.fillMaxWidth(),
             color = Color.White
         ) {
-            Column(
-                modifier = Modifier.padding(24.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                Surface(
-                    modifier = Modifier.size(80.dp),
-                    color = Color(0xFF07C160),
-                    shape = CircleShape
-                ) {
-                    Icon(
-                        Icons.Default.SmartToy,
-                        contentDescription = "头像",
-                        tint = Color.White,
-                        modifier = Modifier.padding(20.dp)
-                    )
-                }
-                Spacer(modifier = Modifier.height(16.dp))
-                Text(
-                    text = "晨翼 Agent",
-                    fontSize = 20.sp,
-                    fontWeight = FontWeight.Bold
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(
-                    text = "版本 ${BuildConfig.VERSION_NAME}",
-                    fontSize = 14.sp,
-                    color = Color.Gray
-                )
-            }
+            Text(
+                text = "设置",
+                modifier = Modifier.padding(16.dp),
+                fontSize = 20.sp,
+                fontWeight = FontWeight.Bold
+            )
         }
-
-        Spacer(modifier = Modifier.height(16.dp))
-
+        
+        HorizontalDivider(color = Color(0xFFE5E5E5), thickness = 0.5.dp)
+        
         // API 配置组
-        Surface(
-            modifier = Modifier.fillMaxWidth(),
-            color = Color.White
-        ) {
-            Column {
-                WeChatSettingItem(
-                    title = "API Key",
-                    subtitle = if (apiKey.isBlank()) "未设置" else "${apiKey.take(10)}...",
-                    onClick = { 
-                        tempApiKey = apiKey
-                        showApiKeyEditor = true 
-                    }
+        SettingsSection(title = "API 配置") {
+            // API Endpoint
+            SettingsItem(
+                title = "API Endpoint",
+                subtitle = apiEndpoint
+            ) {
+                OutlinedTextField(
+                    value = apiEndpoint,
+                    onValueChange = { apiEndpoint = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
                 )
-                HorizontalDivider(color = Color(0xFFE5E5E5), thickness = 0.5.dp)
-                WeChatSettingItem(
-                    title = "API Endpoint",
-                    subtitle = apiEndpoint,
-                    onClick = { 
-                        tempEndpoint = apiEndpoint
-                        showEndpointEditor = true 
-                    }
-                )
-                HorizontalDivider(color = Color(0xFFE5E5E5), thickness = 0.5.dp)
-                WeChatSettingItem(
-                    title = "模型名称",
-                    subtitle = modelName,
-                    onClick = { 
-                        tempModel = modelName
-                        showModelEditor = true 
+            }
+            
+            HorizontalDivider(color = Color(0xFFE5E5E5), thickness = 0.5.dp)
+            
+            // API Key
+            SettingsItem(
+                title = "API Key",
+                subtitle = if (apiKey.isNotBlank()) "已设置" else "未设置"
+            ) {
+                OutlinedTextField(
+                    value = apiKey,
+                    onValueChange = { apiKey = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    visualTransformation = if (showApiKey) VisualTransformation.None else PasswordVisualTransformation(),
+                    trailingIcon = {
+                        IconButton(onClick = { showApiKey = !showApiKey }) {
+                            Icon(
+                                if (showApiKey) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                                contentDescription = null
+                            )
+                        }
                     }
                 )
             }
-        }
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        // 状态信息（合并"我"页面的内核状态）
-        Surface(
-            modifier = Modifier.fillMaxWidth(),
-            color = Color.White
-        ) {
-            Column {
-                WeChatSettingItem(
-                    title = "内核状态",
-                    subtitle = if (kernelInitialized) "正常运行" else "未初始化",
-                    onClick = {}
+            
+            HorizontalDivider(color = Color(0xFFE5E5E5), thickness = 0.5.dp)
+            
+            // Model Name
+            SettingsItem(
+                title = "模型名称",
+                subtitle = modelName
+            ) {
+                OutlinedTextField(
+                    value = modelName,
+                    onValueChange = { modelName = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
                 )
-                HorizontalDivider(color = Color(0xFFE5E5E5), thickness = 0.5.dp)
-                WeChatSettingItem(
-                    title = "无障碍服务",
-                    subtitle = if (ChenyiAccessibilityService.getInstance() != null) "已开启" else "未开启 - 点击开启",
+            }
+            
+            HorizontalDivider(color = Color(0xFFE5E5E5), thickness = 0.5.dp)
+            
+            // 保存按钮
+            Button(
+                onClick = {
+                    prefs.edit().apply {
+                        putString("api_key", apiKey)
+                        putString("api_endpoint", apiEndpoint)
+                        putString("model_name", modelName)
+                        apply()
+                    }
+                    
+                    if (apiKey.isNotBlank()) {
+                        kernel.setApiKey(apiKey, apiEndpoint, modelName)
+                    }
+                    
+                    Toast.makeText(context, "配置已保存", Toast.LENGTH_SHORT).show()
+                },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Color(0xFF07C160)
+                )
+            ) {
+                Text("保存配置")
+            }
+        }
+        
+        Spacer(modifier = Modifier.height(16.dp))
+        
+        // 系统设置组
+        SettingsSection(title = "系统设置") {
+            // 无障碍服务
+            val a11yService = ChenyiAccessibilityService.getInstance()
+            val a11yConnected = a11yService != null
+            
+            SettingsItem(
+                title = "无障碍服务",
+                subtitle = if (a11yConnected) "✅ 已开启" else "❌ 未开启"
+            ) {
+                Button(
                     onClick = {
-                        Toast.makeText(context, "请开启无障碍服务", Toast.LENGTH_SHORT).show()
-                        val intent = android.content.Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS)
+                        val intent = Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS)
                         context.startActivity(intent)
                     }
-                )
+                ) {
+                    Text("前往设置")
+                }
             }
         }
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        // 更新管理组（微信风格卡片）
-        Surface(
-            modifier = Modifier.fillMaxWidth(),
-            color = Color.White
-        ) {
-            Column {
-                // 内核热更新
-                WeChatSettingItem(
-                    title = "内核热更新",
-                    subtitle = "检查并下载最新 Rust 内核",
-                    onClick = {
-                        Toast.makeText(context, "正在检查内核更新...", Toast.LENGTH_SHORT).show()
-                        hotUpdateManager.checkUpdate { hasUpdate, message ->
-                            if (hasUpdate) {
-                                updateMessage = message
-                                showUpdateDialog = true
-                            } else {
-                                Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
-                            }
-                        }
-                    }
-                )
-                HorizontalDivider(color = Color(0xFFE5E5E5), thickness = 0.5.dp)
-                // APK 更新（显示当前版本）
-                WeChatSettingItem(
-                    title = "应用更新",
-                    subtitle = "当前版本: ${BuildConfig.VERSION_NAME} - 点击检查更新",
-                    onClick = {
-                        Toast.makeText(context, "正在检查应用更新...", Toast.LENGTH_SHORT).show()
-                        hotUpdateManager.checkApkUpdate { hasUpdate, version, url, notes ->
-                            if (hasUpdate && url != null) {
-                                apkUpdateVersion = version
-                                apkUpdateUrl = url
-                                apkUpdateNotes = notes
-                                showApkUpdateDialog = true
-                            } else {
-                                Toast.makeText(context, "已是最新版本: $version", Toast.LENGTH_SHORT).show()
-                            }
-                        }
-                    }
-                )
-            }
-        }
-
+        
         Spacer(modifier = Modifier.height(16.dp))
         
         // 关于信息
-        Surface(
-            modifier = Modifier.fillMaxWidth(),
-            color = Color.White
-        ) {
-            Column(modifier = Modifier.padding(16.dp)) {
-                Text(
-                    text = "晨翼Agent",
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Color(0xFF07C160)
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(
-                    text = "版本: ${BuildConfig.VERSION_NAME}",
-                    fontSize = 14.sp,
-                    color = Color.Gray
-                )
-                Text(
-                    text = "内核: Rust v${kernel.getKernelVersion()}",
-                    fontSize = 14.sp,
-                    color = Color.Gray
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(
-                    text = "官网: xintiandi.online",
-                    fontSize = 14.sp,
-                    color = Color(0xFF07C160)
-                )
-            }
+        SettingsSection(title = "关于") {
+            SettingsItem(
+                title = "版本",
+                subtitle = BuildConfig.VERSION_NAME
+            )
+            
+            HorizontalDivider(color = Color(0xFFE5E5E5), thickness = 0.5.dp)
+            
+            SettingsItem(
+                title = "内核版本",
+                subtitle = try {
+                    kernel.getKernelVersion()
+                } catch (e: Exception) {
+                    "unknown"
+                }
+            )
         }
-    }
-
-    // 内核更新确认对话框
-    if (showUpdateDialog) {
-        AlertDialog(
-            onDismissRequest = { if (!isUpdating) showUpdateDialog = false },
-            title = { Text("发现新内核版本") },
-            text = { 
-                Column {
-                    Text(updateMessage)
-                    if (isUpdating) {
-                        Spacer(modifier = Modifier.height(16.dp))
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            CircularProgressIndicator(modifier = Modifier.size(20.dp))
-                            Text("正在下载更新...")
-                        }
-                    }
-                }
-            },
-            confirmButton = {
-                if (!isUpdating) {
-                    TextButton(onClick = {
-                        isUpdating = true
-                        hotUpdateManager.downloadAndUpdate { success, msg ->
-                            isUpdating = false
-                            showUpdateDialog = false
-                            Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
-                        }
-                    }) {
-                        Text("下载并安装")
-                    }
-                }
-            },
-            dismissButton = {
-                if (!isUpdating) {
-                    TextButton(onClick = { showUpdateDialog = false }) {
-                        Text("取消")
-                    }
-                }
-            }
-        )
-    }
-
-    // APK 更新确认对话框
-    if (showApkUpdateDialog) {
-        AlertDialog(
-            onDismissRequest = { if (!isDownloadingApk) showApkUpdateDialog = false },
-            title = { Text("发现新版本: $apkUpdateVersion") },
-            text = { 
-                Column {
-                    if (apkUpdateNotes != null) {
-                        Text(apkUpdateNotes!!, modifier = Modifier.padding(bottom = 8.dp))
-                    }
-                    if (isDownloadingApk) {
-                        Spacer(modifier = Modifier.height(16.dp))
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            CircularProgressIndicator(
-                                progress = { apkDownloadProgress.toFloat() / 100 },
-                                modifier = Modifier.size(20.dp)
-                            )
-                            Text("下载进度: $apkDownloadProgress%")
-                        }
-                    }
-                }
-            },
-            confirmButton = {
-                if (!isDownloadingApk && apkUpdateUrl != null) {
-                    TextButton(onClick = {
-                        isDownloadingApk = true
-                        apkDownloadProgress = 0
-                        hotUpdateManager.downloadApk(
-                            apkUpdateUrl!!,
-                            { progress -> apkDownloadProgress = progress },
-                            { success, apkFile ->
-                                isDownloadingApk = false
-                                showApkUpdateDialog = false
-                                if (success && apkFile != null) {
-                                    Log.d("Settings", "APK 下载成功: ${apkFile.absolutePath}, 大小: ${apkFile.length()}")
-                                    Toast.makeText(context, "下载完成，正在打开安装界面...", Toast.LENGTH_SHORT).show()
-                                    // 延迟一下，让 Toast 显示
-                                    Handler(Looper.getMainLooper()).postDelayed({
-                                        installApk(apkFile)
-                                    }, 500)
-                                } else {
-                                    Toast.makeText(context, "下载失败，请重试", Toast.LENGTH_LONG).show()
-                                }
-                            }
-                        )
-                    }) {
-                        Text("下载并安装")
-                    }
-                }
-            },
-            dismissButton = {
-                if (!isDownloadingApk) {
-                    TextButton(onClick = { showApkUpdateDialog = false }) {
-                        Text("取消")
-                    }
-                }
-            }
-        )
-    }
-    
-    // API Key 编辑对话框
-    if (showApiKeyEditor) {
-        AlertDialog(
-            onDismissRequest = { showApiKeyEditor = false },
-            title = { Text("API Key") },
-            text = {
-                Column {
-                    OutlinedTextField(
-                        value = tempApiKey,
-                        onValueChange = { tempApiKey = it },
-                        label = { Text("API Key") },
-                        placeholder = { Text("输入 API Key") },
-                        visualTransformation = if (showPassword) VisualTransformation.None else PasswordVisualTransformation(),
-                        trailingIcon = {
-                            IconButton(onClick = { showPassword = !showPassword }) {
-                                Icon(
-                                    if (showPassword) Icons.Default.VisibilityOff else Icons.Default.Visibility,
-                                    contentDescription = if (showPassword) "隐藏" else "显示"
-                                )
-                            }
-                        },
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                }
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        apiKey = tempApiKey
-                        prefs.edit().putString("api_key", tempApiKey).apply()
-                        // 更新内核配置
-                        val config = KernelConfig(
-                            apiEndpoint = apiEndpoint,
-                            apiKey = tempApiKey,
-                            modelName = modelName
-                        )
-                        kernel.updateConfig(config)
-                        // 同时更新 Rust 内核的 API Key
-                        kernel.setApiKey(tempApiKey, apiEndpoint, modelName)
-                        Toast.makeText(context, "API Key 已保存", Toast.LENGTH_SHORT).show()
-                        showApiKeyEditor = false
-                    }
-                ) {
-                    Text("保存")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showApiKeyEditor = false }) {
-                    Text("取消")
-                }
-            }
-        )
-    }
-
-    // Endpoint 编辑对话框
-    if (showEndpointEditor) {
-        AlertDialog(
-            onDismissRequest = { showEndpointEditor = false },
-            title = { Text("API Endpoint") },
-            text = {
-                OutlinedTextField(
-                    value = tempEndpoint,
-                    onValueChange = { tempEndpoint = it },
-                    label = { Text("Endpoint") },
-                    placeholder = { Text("https://api.example.com/v1") },
-                    modifier = Modifier.fillMaxWidth()
-                )
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        apiEndpoint = tempEndpoint
-                        prefs.edit().putString("api_endpoint", tempEndpoint).apply()
-                        // 更新内核配置
-                        val config = KernelConfig(
-                            apiEndpoint = tempEndpoint,
-                            apiKey = apiKey,
-                            modelName = modelName
-                        )
-                        kernel.updateConfig(config)
-                        Toast.makeText(context, "Endpoint 已保存", Toast.LENGTH_SHORT).show()
-                        showEndpointEditor = false
-                    }
-                ) {
-                    Text("保存")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showEndpointEditor = false }) {
-                    Text("取消")
-                }
-            }
-        )
-    }
-
-    // Model 编辑对话框
-    if (showModelEditor) {
-        AlertDialog(
-            onDismissRequest = { showModelEditor = false },
-            title = { Text("模型名称") },
-            text = {
-                OutlinedTextField(
-                    value = tempModel,
-                    onValueChange = { tempModel = it },
-                    label = { Text("模型") },
-                    placeholder = { Text("glm-4-flash") },
-                    modifier = Modifier.fillMaxWidth()
-                )
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        modelName = tempModel
-                        prefs.edit().putString("model_name", tempModel).apply()
-                        // 更新内核配置
-                        val config = KernelConfig(
-                            apiEndpoint = apiEndpoint,
-                            apiKey = apiKey,
-                            modelName = tempModel
-                        )
-                        kernel.updateConfig(config)
-                        Toast.makeText(context, "模型名称已保存", Toast.LENGTH_SHORT).show()
-                        showModelEditor = false
-                    }
-                ) {
-                    Text("保存")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showModelEditor = false }) {
-                    Text("取消")
-                }
-            }
-        )
     }
 }
 
 /**
- * 微信风格设置项
+ * 设置分组
  */
 @Composable
-fun WeChatSettingItem(
+fun SettingsSection(
     title: String,
-    subtitle: String,
-    onClick: () -> Unit
+    content: @Composable () -> Unit
 ) {
     Surface(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick),
+        modifier = Modifier.fillMaxWidth(),
         color = Color.White
     ) {
-        Row(
-            modifier = Modifier.padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(text = title, fontSize = 16.sp)
-                Text(text = subtitle, fontSize = 13.sp, color = Color.Gray)
-            }
-            Icon(
-                Icons.Default.ChevronRight,
-                contentDescription = "进入",
-                tint = Color.Gray,
-                modifier = Modifier.size(20.dp)
+        Column {
+            Text(
+                text = title,
+                modifier = Modifier.padding(16.dp),
+                fontSize = 14.sp,
+                color = Color.Gray
             )
+            content()
+        }
+    }
 }
+
+/**
+ * 设置项
+ */
+@Composable
+fun SettingsItem(
+    title: String,
+    subtitle: String,
+    content: @Composable () -> Unit = {}
+) {
+    Column(
+        modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)
+    ) {
+        Text(
+            text = title,
+            fontSize = 16.sp,
+            fontWeight = FontWeight.Medium
+        )
+        Spacer(modifier = Modifier.height(4.dp))
+        Text(
+            text = subtitle,
+            fontSize = 12.sp,
+            color = Color.Gray
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+        content()
     }
 }
