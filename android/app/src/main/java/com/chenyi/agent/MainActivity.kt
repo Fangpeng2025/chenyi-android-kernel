@@ -1245,6 +1245,9 @@ fun SettingsScreen(
     var modelName by remember { mutableStateOf(prefs.getString("model_name", "glm-5") ?: "") }
     var showApiKey by remember { mutableStateOf(false) }
     
+    // 用户画像对话框（P1 功能）
+    var showUserProfileDialog by remember { mutableStateOf(false) }
+    
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -1352,8 +1355,6 @@ fun SettingsScreen(
         Spacer(modifier = Modifier.height(16.dp))
         
         // 用户画像设置组（P1 功能）
-        var showUserProfileDialog by remember { mutableStateOf(false) }
-        
         SettingsSection(title = "用户画像") {
             val userName = prefs.getString("user_name", "") ?: ""
             val userRole = prefs.getString("user_role", "") ?: ""
