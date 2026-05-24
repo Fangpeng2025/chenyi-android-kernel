@@ -323,7 +323,7 @@ fun SessionListScreen(
             AlertDialog(
                 onDismissRequest = { showDeleteDialog = false },
                 title = { Text("删除会话") },
-                text = { Text("确定要删除会话 "${sessionToDelete!!.title}" 吗？") },
+                text = { Text("确定要删除会话 \"${sessionToDelete!!.title}\" 吗？") },
                 confirmButton = {
                     TextButton(
                         onClick = {
