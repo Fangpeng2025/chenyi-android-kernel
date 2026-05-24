@@ -151,3 +151,26 @@ impl Default for MemoryConfig {
         }
     }
 }
+
+/// 压缩配置
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct CompressionConfig {
+    /// 是否启用压缩
+    pub enabled: bool,
+    
+    /// 压缩阈值（token 数）
+    pub compression_threshold: usize,
+    
+    /// 目标压缩比例
+    pub target_ratio: f64,
+}
+
+impl Default for CompressionConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            compression_threshold: 4000,
+            target_ratio: 0.5,
+        }
+    }
+}

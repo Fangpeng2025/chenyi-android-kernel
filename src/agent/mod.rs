@@ -2,8 +2,9 @@
 
 pub mod orchestrator;
 
-use crate::types::{KernelConfig, Result, Error};
+use crate::types::{KernelConfig, Result, Error, CompressionConfig};
 use crate::memory::MemoryEngine;
+use crate::compression::ContextCompressor;
 use crate::llm::{LlmClient, ChatMessage, ToolCall};
 use crate::storage::StorageEngine;
 use crate::tools::ToolRegistry;
@@ -25,6 +26,9 @@ pub struct AgentKernel {
     
     /// 记忆引擎
     memory: Arc<Mutex<MemoryEngine>>,
+    
+    /// 上下文压缩器
+    compressor: Arc<ContextCompressor>,
     
     /// LLM 客户端
     pub llm: Arc<LlmClient>,
@@ -59,6 +63,11 @@ impl AgentKernel {
         // 初始化 LLM 客户端
         let llm = Arc::new(LlmClient::new(config.llm.clone())?);
         
+        // 初始化上下文压缩器
+        let compression_config = CompressionConfig::default();
+        let compressor = Arc::new(ContextCompressor::new(compression_config, llm.clone()));
+        log::info!("[Agent] 上下文压缩器已初始化 (阈值: {} tokens)", compression_config.compression_threshold);
+        
         // 初始化工具注册表
         let tools = Arc::new(ToolRegistry::new());
         
@@ -73,6 +82,7 @@ impl AgentKernel {
         Ok(Self {
             config,
             memory,
+            compressor,
             llm,
             storage,
             tools,
@@ -106,7 +116,7 @@ impl AgentKernel {
         self.conversation_history.lock().len()
     }
     
-    /// 处理消息（带工具调用循环）
+    /// 处理消息（带工具调用循环、上下文压缩和记忆注入）
     pub async fn chat(&self, message: &str) -> Result<String> {
         log::info!("[Agent] 开始处理消息: {}", message);
         
@@ -122,11 +132,12 @@ impl AgentKernel {
             history.push(ChatMessage::system(&self.system_prompt));
         }
         
-        // 1. 获取相关记忆上下文
-        let context = self.memory.lock().get_context(message)?;
-        let user_content = if !context.is_empty() {
-            log::info!("[Agent] 找到相关记忆: {} 字节", context.len());
-            format!("相关记忆：\n{}\n\n用户问题：{}", context, message)
+        // ========== 任务1: 记忆注入到系统提示词 ==========
+        // 获取相关记忆上下文
+        let memory_context = self.memory.lock().get_context(message)?;
+        let user_content = if !memory_context.is_empty() {
+            log::info!("[Agent] 找到相关记忆: {} 字节，注入到用户消息", memory_context.len());
+            format!("相关记忆：\n{}\n\n用户问题：{}", memory_context, message)
         } else {
             message.to_string()
         };
@@ -136,22 +147,31 @@ impl AgentKernel {
         
         // 限制历史长度（保留第一条系统消息）
         if history.len() > MAX_HISTORY_LENGTH {
-            // 计算需要删除的数量（保留系统消息）
-            let keep_count = MAX_HISTORY_LENGTH - 1; // 保留的系统消息位置
-            let current_user_msgs = history.len() - 1; // 当前用户/助手消息数
+            let keep_count = MAX_HISTORY_LENGTH - 1;
+            let current_user_msgs = history.len() - 1;
             let drain_count = current_user_msgs.saturating_sub(keep_count);
             if drain_count > 0 {
-                // 删除最早的用户/助手消息（索引 1 到 drain_count）
                 history.drain(1..=drain_count);
             }
         }
         
-        // 克隆历史用于 LLM 调用（释放锁）
-        let messages: Vec<ChatMessage> = history.clone();
-        drop(history); // 释放锁
+        // 克隆历史用于后续处理（释放锁）
+        let mut messages: Vec<ChatMessage> = history.clone();
+        drop(history);
         
-        // 2. 调用 LLM
-        log::info!("[Agent] 调用 LLM");
+        // ========== 任务3: 上下文压缩 ==========
+        // 检查是否需要压缩
+        if self.compressor.needs_compression(&messages) {
+            log::info!("[Agent] 检测到需要压缩，开始压缩上下文...");
+            let original_count = messages.len();
+            messages = self.compressor.compress(messages).await?;
+            log::info!("[Agent] 压缩完成: {} -> {} 条消息", original_count, messages.len());
+        } else {
+            log::debug!("[Agent] 上下文长度正常，无需压缩");
+        }
+        
+        // ========== 调用 LLM ==========
+        log::info!("[Agent] 调用 LLM (消息数: {})", messages.len());
         let response = self.llm.chat_with_tools(&messages, self.tools.list_tools()).await?;
         
         // 检查是否有工具调用
@@ -184,7 +204,7 @@ impl AgentKernel {
             // 没有回调，返回工具调用信息给 Kotlin 端执行
             log::warn!("[Agent] 没有工具回调，返回给 Kotlin 执行");
             
-            // 将当前状态保存到会话历史（包括用户的最新消息和 assistant 的 tool_calls）
+            // 将当前状态保存到会话历史
             {
                 let mut history = self.conversation_history.lock();
                 let content = response.content.as_deref().unwrap_or("");
@@ -252,6 +272,12 @@ impl AgentKernel {
             }
             
             rounds += 1;
+            
+            // 检查是否需要压缩（工具调用后也可能需要压缩）
+            if self.compressor.needs_compression(&current_messages) {
+                log::info!("[Agent] 工具调用后检测到需要压缩");
+                current_messages = self.compressor.compress(current_messages).await?;
+            }
             
             // 再次调用 LLM
             log::info!("[Agent] 第 {} 轮调用 LLM", rounds + 1);
@@ -443,7 +469,19 @@ impl AgentKernel {
             memory_entries: self.memory.lock().count(),
             tools_count: self.tools.count(),
             history_length: self.conversation_history.lock().len(),
+            compression_stats: self.compressor.get_stats(),
         }
+    }
+    
+    /// 获取压缩器统计信息
+    pub fn compression_stats(&self) -> crate::compression::CompressionStats {
+        self.compressor.get_stats()
+    }
+    
+    /// 重置压缩器统计信息
+    pub fn reset_compression_stats(&self) {
+        self.compressor.reset_stats();
+        log::info!("[Agent] 压缩器统计信息已重置");
     }
 }
 
@@ -455,4 +493,6 @@ pub struct KernelStatus {
     pub memory_entries: usize,
     pub tools_count: usize,
     pub history_length: usize,
+    #[serde(flatten)]
+    pub compression_stats: crate::compression::CompressionStats,
 }

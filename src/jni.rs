@@ -395,6 +395,232 @@ pub extern "system" fn Java_com_chenyi_agent_Kernel_nativeDestroy(_env: JNIEnv, 
     log::info!("[JNI] 内核已销毁");
 }
 
+// ============ 流式响应支持 ============
+
+/// 流式响应回调接口
+/// 
+/// Kotlin 端需要实现 StreamCallback 接口：
+/// ```kotlin
+/// interface StreamCallback {
+///     fun onToken(token: String)
+///     fun onComplete(response: String)
+///     fun onError(error: String)
+/// }
+/// ```
+pub struct StreamCallbackWrapper {
+    /// JNI 环境（线程局部）
+    callback_class: String,
+    callback_object: jni::objects::GlobalRef,
+}
+
+impl StreamCallbackWrapper {
+    pub fn new(env: &mut JNIEnv, callback: JObject) -> Result<Self, jni::errors::Error> {
+        let global_ref = env.new_global_ref(&callback)?;
+        Ok(Self {
+            callback_class: "com/chenyi/agent/StreamCallback".to_string(),
+            callback_object: global_ref,
+        })
+    }
+    
+    /// 调用 onToken 回调
+    pub fn on_token(&self, env: &mut JNIEnv, token: &str) {
+        let callback = self.callback_object.as_obj();
+        
+        match env.call_method(
+            callback,
+            "onToken",
+            "(Ljava/lang/String;)V",
+            &[jni::objects::JValue::Object(&env.new_string(token).unwrap())],
+        ) {
+            Ok(_) => log::trace!("[JNI] onToken 回调成功: {}", token),
+            Err(e) => log::error!("[JNI] onToken 回调失败: {:?}", e),
+        }
+    }
+    
+    /// 调用 onComplete 回调
+    pub fn on_complete(&self, env: &mut JNIEnv, response: &str) {
+        let callback = self.callback_object.as_obj();
+        
+        match env.call_method(
+            callback,
+            "onComplete",
+            "(Ljava/lang/String;)V",
+            &[jni::objects::JValue::Object(&env.new_string(response).unwrap())],
+        ) {
+            Ok(_) => log::debug!("[JNI] onComplete 回调成功"),
+            Err(e) => log::error!("[JNI] onComplete 回调失败: {:?}", e),
+        }
+    }
+    
+    /// 调用 onError 回调
+    pub fn on_error(&self, env: &mut JNIEnv, error: &str) {
+        let callback = self.callback_object.as_obj();
+        
+        match env.call_method(
+            callback,
+            "onError",
+            "(Ljava/lang/String;)V",
+            &[jni::objects::JValue::Object(&env.new_string(error).unwrap())],
+        ) {
+            Ok(_) => log::debug!("[JNI] onError 回调成功"),
+            Err(e) => log::error!("[JNI] onError 回调失败: {:?}", e),
+        }
+    }
+}
+
+/// 流式聊天（支持 Kotlin 协程）
+/// 
+/// 此方法模拟流式响应，通过 StreamCallback 逐个 token 回调
+/// 未来可以扩展为真正的 SSE 流式响应
+#[no_mangle]
+pub extern "system" fn Java_com_chenyi_agent_Kernel_nativeChatStream(
+    mut env: JNIEnv,
+    _class: JClass,
+    message: JString,
+    callback: JObject,
+) {
+    let message: String = match env.get_string(&message) {
+        Ok(s) => s.into(),
+        Err(e) => {
+            log::error!("[JNI] 获取消息失败: {:?}", e);
+            return;
+        }
+    };
+
+    log::info!("[JNI] 收到流式消息: {}", message);
+    
+    // 创建回调包装器
+    let callback_wrapper = match StreamCallbackWrapper::new(&mut env, callback) {
+        Ok(w) => w,
+        Err(e) => {
+            log::error!("[JNI] 创建回调包装器失败: {:?}", e);
+            return;
+        }
+    };
+
+    // 获取内核
+    let cell = match KERNEL.get() {
+        Some(c) => c,
+        None => {
+            log::error!("[JNI] 错误: 内核未初始化");
+            // 需要获取 JNI 环境来调用回调，这里简化处理
+            return;
+        }
+    };
+
+    // 获取内核克隆
+    let kernel = {
+        let guard = cell.lock();
+        match guard.as_ref() {
+            Some(k) => k.clone(),
+            None => {
+                log::error!("[JNI] 错误: 内核未初始化");
+                return;
+            }
+        }
+    };
+    
+    // 使用全局 tokio runtime 执行异步
+    let rt = get_runtime();
+    
+    // 执行 chat
+    let result = rt.block_on(kernel.chat(&message));
+
+    match result {
+        Ok(response) => {
+            log::info!("[JNI] 流式响应成功: {} 字节", response.len());
+            
+            // 模拟流式响应：将响应分块发送
+            // 注意：这是模拟流式，真实流式需要 LLM API 支持 SSE
+            let chunk_size = 10; // 每次发送的字符数
+            let chars: Vec<char> = response.chars().collect();
+            let total_chunks = (chars.len() + chunk_size - 1) / chunk_size;
+            
+            // 获取 JNI 环境（这里需要使用 JavaVM）
+            // 注意：在真实实现中，需要通过 JavaVM AttachCurrentThread 获取 JNIEnv
+            // 当前简化实现：假设调用线程已经有 JNIEnv
+            
+            // 逐块发送 token
+            for i in 0..total_chunks {
+                let start = i * chunk_size;
+                let end = std::cmp::min(start + chunk_size, chars.len());
+                let chunk: String = chars[start..end].iter().collect();
+                
+                // 调用 onToken 回调
+                callback_wrapper.on_token(&mut env, &chunk);
+                
+                // 短暂延迟，模拟流式效果
+                std::thread::sleep(std::time::Duration::from_millis(20));
+            }
+            
+            // 发送完成回调
+            callback_wrapper.on_complete(&mut env, &response);
+        }
+        Err(e) => {
+            log::error!("[JNI] 流式响应失败: {}", e);
+            callback_wrapper.on_error(&mut env, &e.to_string());
+        }
+    }
+}
+
+/// 获取压缩器统计信息
+#[no_mangle]
+pub extern "system" fn Java_com_chenyi_agent_Kernel_nativeGetCompressionStats(
+    mut env: JNIEnv,
+    _class: JClass,
+) -> jstring {
+    let cell = match KERNEL.get() {
+        Some(c) => c,
+        None => {
+            let json = serde_json::json!({
+                "success": false,
+                "error": "内核未初始化"
+            });
+            return json_to_jstring(&mut env, &json);
+        }
+    };
+
+    let guard = cell.lock();
+    match guard.as_ref() {
+        Some(kernel) => {
+            let stats = kernel.compression_stats();
+            let json = serde_json::json!({
+                "success": true,
+                "stats": stats
+            });
+            json_to_jstring(&mut env, &json)
+        }
+        None => {
+            let json = serde_json::json!({
+                "success": false,
+                "error": "内核未初始化"
+            });
+            json_to_jstring(&mut env, &json)
+        }
+    }
+}
+
+/// 重置压缩器统计信息
+#[no_mangle]
+pub extern "system" fn Java_com_chenyi_agent_Kernel_nativeResetCompressionStats(
+    mut _env: JNIEnv,
+    _class: JClass,
+) -> jboolean {
+    let cell = match KERNEL.get() {
+        Some(c) => c,
+        None => return false as jboolean,
+    };
+    
+    let guard = cell.lock();
+    if let Some(kernel) = guard.as_ref() {
+        kernel.reset_compression_stats();
+        log::info!("[JNI] 压缩器统计信息已重置");
+        true as jboolean
+    } else {
+        false as jboolean
+    }
+}
+
 /// 更新内核配置
 #[no_mangle]
 pub extern "system" fn Java_com_chenyi_agent_Kernel_nativeUpdateConfig(

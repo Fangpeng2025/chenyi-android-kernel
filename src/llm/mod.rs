@@ -268,4 +268,14 @@ impl LlmClient {
         let response = self.chat_with_tools(messages, vec![]).await?;
         response.content.ok_or_else(|| Error::Other("无响应内容".to_string()))
     }
+    
+    /// 压缩文本（用于上下文压缩）
+    pub async fn compress(&self, text: &str) -> Result<String> {
+        let messages = vec![
+            ChatMessage::system("你是一个文本压缩助手。请将输入的文本压缩为简洁的摘要，保留关键信息。"),
+            ChatMessage::user(text),
+        ];
+        
+        self.chat(&messages).await
+    }
 }

@@ -2,7 +2,41 @@ package com.chenyi.agent
 
 import android.content.Context
 import android.util.Log
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import java.util.concurrent.atomic.AtomicBoolean
+
+/**
+ * 流式响应回调接口
+ * 
+ * Kotlin 端需要实现此接口来接收流式响应：
+ * ```kotlin
+ * class MyStreamCallback : StreamCallback {
+ *     override fun onToken(token: String) { // 处理每个 token }
+ *     override fun onComplete(response: String) { // 处理完整响应 }
+ *     override fun onError(error: String) { // 处理错误 }
+ * }
+ * ```
+ */
+interface StreamCallback {
+    /**
+     * 接收到一个新的 token
+     * @param token 本次接收到的文本片段
+     */
+    fun onToken(token: String)
+    
+    /**
+     * 流式响应完成
+     * @param response 完整的响应文本
+     */
+    fun onComplete(response: String)
+    
+    /**
+     * 发生错误
+     * @param error 错误信息
+     */
+    fun onError(error: String)
+}
 
 /**
  * Rust 内核 JNI 桥接
@@ -38,6 +72,7 @@ class Kernel(private val context: Context) {
     // JNI 方法
     private external fun nativeInit(dataDir: String): Boolean
     private external fun nativeChat(message: String): String
+    private external fun nativeChatStream(message: String, callback: StreamCallback)
     private external fun nativeExecuteTool(tool: String, params: String): String
     private external fun nativeGetStatus(): String
     private external fun nativeDestroy()
@@ -46,6 +81,8 @@ class Kernel(private val context: Context) {
     private external fun nativeSubmitToolResults(toolResultsJson: String): String
     private external fun nativeGetKernelVersion(): String
     private external fun nativeSetApiKey(apiKey: String, baseUrl: String, model: String): Boolean
+    private external fun nativeGetCompressionStats(): String
+    private external fun nativeResetCompressionStats(): Boolean
 
     // 工具执行回调（由 AccessibilityService 设置）
     private var toolCallback: ((String, String) -> String)? = null
@@ -248,7 +285,7 @@ fun executeToolJson(tool: String, paramsJson: String): Result {
         }
     }
 
-    /**
+/**
      * 获取内核状态
      */
     fun getStatus(): Status {
@@ -269,6 +306,69 @@ fun executeToolJson(tool: String, paramsJson: String): Result {
     }
     
     /**
+     * 流式发送消息（支持 Kotlin 协程）
+     * 
+     * 使用方法：
+     * ```kotlin
+     * val callback = object : StreamCallback {
+     *     override fun onToken(token: String) {
+     *         // 更新 UI 显示
+     *     }
+     *     override fun onComplete(response: String) {
+     *         // 完成，保存响应
+     *     }
+     *     override fun onError(error: String) {
+     *         // 处理错误
+     *     }
+     * }
+     * 
+     * // 在协程中调用
+     * withContext(Dispatchers.IO) {
+     *     kernel.chatStream(message, callback)
+     * }
+     * ```
+     */
+    fun chatStream(message: String, callback: StreamCallback) {
+        try {
+            nativeChatStream(message, callback)
+        } catch (e: Exception) {
+            Log.e(TAG, "流式聊天失败", e)
+            callback.onError(e.message ?: "流式聊天失败")
+        }
+    }
+    
+    /**
+     * 流式发送消息（协程版本）
+     * 
+     * 使用方法：
+     * ```kotlin
+     * val response = kernel.chatStreamSuspend(message, callback)
+     * ```
+     */
+    suspend fun chatStreamSuspend(message: String, callback: StreamCallback): String {
+        return withContext(Dispatchers.IO) {
+            val resultCallback = SuspendStreamCallback()
+            nativeChatStream(message, resultCallback)
+            resultCallback.getResponse()
+        }
+    }
+    
+    /**
+     * 获取压缩器统计信息
+     */
+    fun getCompressionStats(): CompressionStats {
+        val json = nativeGetCompressionStats()
+        return CompressionStats.fromJson(json)
+    }
+    
+    /**
+     * 重置压缩器统计信息
+     */
+    fun resetCompressionStats(): Boolean {
+        return nativeResetCompressionStats()
+    }
+    
+    /**
      * 清除会话历史
      */
     fun clearHistory(): Boolean {
@@ -282,6 +382,36 @@ fun executeToolJson(tool: String, paramsJson: String): Result {
         nativeDestroy()
         initialized.set(false)
         Log.d(TAG, "内核已销毁")
+    }
+}
+
+/**
+ * 挂起版本的流式回调（用于协程）
+ */
+private class SuspendStreamCallback : StreamCallback {
+    private var response = StringBuilder()
+    private var error: String? = null
+    private var completed = false
+    
+    override fun onToken(token: String) {
+        response.append(token)
+    }
+    
+    override fun onComplete(response: String) {
+        completed = true
+    }
+    
+    override fun onError(error: String) {
+        this.error = error
+        completed = true
+    }
+    
+    fun getResponse(): String {
+        return if (error != null) {
+            throw Exception(error!!)
+        } else {
+            response.toString()
+        }
     }
 }
 
@@ -409,4 +539,60 @@ fun org.json.JSONArray.toList(): List<Any?> {
         })
     }
     return list
+}
+
+/**
+ * 压缩器统计信息
+ */
+data class CompressionStats(
+    val success: Boolean,
+    val totalCompressions: Long = 0,
+    val tokensSaved: Long = 0,
+    val originalTokens: Long = 0,
+    val compressedTokens: Long = 0,
+    val error: String? = null
+) {
+    companion object {
+        fun fromJson(json: String): CompressionStats {
+            return try {
+                val obj = org.json.JSONObject(json)
+                val statsObj = obj.optJSONObject("stats")
+                if (statsObj != null) {
+                    CompressionStats(
+                        success = obj.optBoolean("success", false),
+                        totalCompressions = statsObj.optLong("total_compressions", 0),
+                        tokensSaved = statsObj.optLong("tokens_saved", 0),
+                        originalTokens = statsObj.optLong("original_tokens", 0),
+                        compressedTokens = statsObj.optLong("compressed_tokens", 0)
+                    )
+                } else {
+                    CompressionStats(
+                        success = false,
+                        error = obj.optString("error").takeIf { it.isNotEmpty() }
+                    )
+                }
+            } catch (e: Exception) {
+                Log.e("CompressionStats", "解析 JSON 失败: ${e.message}", e)
+                CompressionStats(success = false, error = "解析响应失败: ${e.message}")
+            }
+        }
+    }
+    
+    /**
+     * 计算压缩率
+     */
+    fun compressionRatio(): Double {
+        return if (originalTokens > 0) {
+            (originalTokens - compressedTokens).toDouble() / originalTokens.toDouble()
+        } else {
+            0.0
+        }
+    }
+    
+    /**
+     * 格式化显示
+     */
+    fun format(): String {
+        return "压缩次数: $totalCompressions, 节省tokens: $tokensSaved, 压缩率: ${(compressionRatio() * 100).toInt()}%"
+    }
 }
