@@ -799,6 +799,18 @@ fun ChatScreen(
         
         HorizontalDivider(color = Color(0xFFE5E5E5), thickness = 0.5.dp)
         
+        // Token 使用进度条（P1 功能）
+        TokenUsageProgressBar(
+            currentTokens = currentSession.messages.sumOf { it.content.length / 4 }, // 简化估算
+            maxTokens = 8000,
+            onCompress = {
+                // 手动压缩上下文
+                Toast.makeText(context, "上下文压缩功能开发中...", Toast.LENGTH_SHORT).show()
+            }
+        )
+        
+        HorizontalDivider(color = Color(0xFFE5E5E5), thickness = 0.5.dp)
+        
         // 消息列表
         LazyColumn(
             modifier = Modifier
@@ -1339,6 +1351,34 @@ fun SettingsScreen(
         
         Spacer(modifier = Modifier.height(16.dp))
         
+        // 用户画像设置组（P1 功能）
+        var showUserProfileDialog by remember { mutableStateOf(false) }
+        
+        SettingsSection(title = "用户画像") {
+            val userName = prefs.getString("user_name", "") ?: ""
+            val userRole = prefs.getString("user_role", "") ?: ""
+            
+            SettingsItem(
+                title = "用户信息",
+                subtitle = if (userName.isNotBlank()) "$userName - $userRole" else "未设置"
+            ) {
+                Button(
+                    onClick = { showUserProfileDialog = true }
+                ) {
+                    Text("编辑画像")
+                }
+            }
+        }
+        
+        Spacer(modifier = Modifier.height(16.dp))
+        
+        // 上下文压缩设置组（P1 功能）
+        SettingsSection(title = "上下文压缩") {
+            CompressionConfigSection(prefs)
+        }
+        
+        Spacer(modifier = Modifier.height(16.dp))
+        
         // 系统设置组
         SettingsSection(title = "系统设置") {
             // 无障碍服务
@@ -1380,6 +1420,18 @@ fun SettingsScreen(
                 }
             )
         }
+    }
+    
+    // 用户画像对话框（P1 功能）
+    if (showUserProfileDialog) {
+        UserProfileDialog(
+            prefs = prefs,
+            onDismiss = { showUserProfileDialog = false },
+            onSave = {
+                showUserProfileDialog = false
+                Toast.makeText(context, "用户画像已保存", Toast.LENGTH_SHORT).show()
+            }
+        )
     }
 }
 
@@ -1433,4 +1485,337 @@ fun SettingsItem(
         Spacer(modifier = Modifier.height(8.dp))
         content()
     }
+}
+
+// ==================== P1 功能：上下文压缩 UI ====================
+
+/**
+ * Token 使用进度条
+ */
+@Composable
+fun TokenUsageProgressBar(
+    currentTokens: Int,
+    maxTokens: Int,
+    onCompress: () -> Unit
+) {
+    val usageRatio = currentTokens.toFloat() / maxTokens.toFloat()
+    val progressColor = when {
+        usageRatio < 0.5f -> Color(0xFF07C160)  // 绿色
+        usageRatio < 0.75f -> Color(0xFFFF9800) // 黄色
+        else -> Color.Red                       // 红色
+    }
+    
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        color = Color.White
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Token: ${currentTokens}/${maxTokens}",
+                    fontSize = 12.sp,
+                    color = Color.Gray
+                )
+                
+                // 压缩按钮
+                if (usageRatio > 0.5f) {
+                    TextButton(
+                        onClick = onCompress,
+                        colors = ButtonDefaults.textButtonColors(
+                            contentColor = progressColor
+                        )
+                    ) {
+                        Icon(
+                            Icons.Default.Compress,
+                            contentDescription = "压缩",
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("压缩", fontSize = 12.sp)
+                    }
+                }
+            }
+            
+            Spacer(modifier = Modifier.height(4.dp))
+            
+            // 进度条
+            LinearProgressIndicator(
+                progress = { usageRatio },
+                modifier = Modifier.fillMaxWidth(),
+                color = progressColor,
+                trackColor = Color(0xFFE5E5E5),
+                strokeCap = androidx.compose.ui.graphics.StrokeCap.Round
+            )
+        }
+    }
+}
+
+/**
+ * 上下文压缩配置
+ */
+@Composable
+fun CompressionConfigSection(prefs: SharedPreferences) {
+    var enabled by remember { mutableStateOf(prefs.getBoolean("compression_enabled", true)) }
+    var threshold by remember { 
+        mutableFloatStateOf(prefs.getFloat("compression_threshold", 0.5f))
+    }
+    var targetRatio by remember { 
+        mutableFloatStateOf(prefs.getFloat("compression_target", 0.2f))
+    }
+    
+    Column {
+        // 启用开关
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text("自动压缩", fontSize = 16.sp, fontWeight = FontWeight.Medium)
+            Switch(
+                checked = enabled,
+                onCheckedChange = { 
+                    enabled = it
+                    prefs.edit().putBoolean("compression_enabled", it).apply()
+                }
+            )
+        }
+        
+        if (enabled) {
+            Spacer(modifier = Modifier.height(8.dp))
+            
+            // 压缩阈值
+            Text("触发阈值: ${(threshold * 100).toInt()}%", fontSize = 12.sp, color = Color.Gray)
+            Slider(
+                value = threshold,
+                onValueChange = { 
+                    threshold = it
+                    prefs.edit().putFloat("compression_threshold", it).apply()
+                },
+                valueRange = 0.3f..0.9f,
+                steps = 6
+            )
+            
+            Spacer(modifier = Modifier.height(8.dp))
+            
+            // 目标压缩比例
+            Text("目标比例: ${(targetRatio * 100).toInt()}%", fontSize = 12.sp, color = Color.Gray)
+            Slider(
+                value = targetRatio,
+                onValueChange = { 
+                    targetRatio = it
+                    prefs.edit().putFloat("compression_target", it).apply()
+                },
+                valueRange = 0.1f..0.5f,
+                steps = 4
+            )
+        }
+    }
+}
+
+// ==================== P1 功能：流式输出显示 ====================
+
+/**
+ * 流式消息气泡 - 打字机效果
+ */
+@Composable
+fun StreamingMessageBubble(
+    partialContent: String,
+    isStreaming: Boolean
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.Start
+    ) {
+        // AI 头像
+        Surface(
+            modifier = Modifier.size(40.dp),
+            color = Color(0xFF07C160),
+            shape = CircleShape
+        ) {
+            Icon(
+                Icons.Default.SmartToy,
+                contentDescription = "AI",
+                tint = Color.White,
+                modifier = Modifier.padding(8.dp)
+            )
+        }
+        Spacer(modifier = Modifier.width(8.dp))
+        
+        // 流式消息气泡
+        Surface(
+            modifier = Modifier.widthIn(max = 280.dp),
+            color = Color.White,
+            shape = RoundedCornerShape(8.dp),
+            tonalElevation = 2.dp
+        ) {
+            Column(modifier = Modifier.padding(12.dp)) {
+                Text(
+                    text = partialContent,
+                    fontSize = 15.sp,
+                    lineHeight = 20.sp
+                )
+                
+                if (isStreaming) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    // 打字机指示器
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(12.dp),
+                            strokeWidth = 1.5.dp,
+                            color = Color(0xFF07C160)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            "生成中...",
+                            fontSize = 12.sp,
+                            color = Color.Gray
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+// ==================== P1 功能：用户画像 UI ====================
+
+/**
+ * 用户画像编辑对话框
+ */
+@Composable
+fun UserProfileDialog(
+    prefs: SharedPreferences,
+    onDismiss: () -> Unit,
+    onSave: () -> Unit
+) {
+    var userName by remember { mutableStateOf(prefs.getString("user_name", "") ?: "") }
+    var userRole by remember { mutableStateOf(prefs.getString("user_role", "") ?: "") }
+    var userPreferences by remember { 
+        mutableStateOf(prefs.getString("user_preferences", "") ?: "") 
+    }
+    var timezone by remember { mutableStateOf(prefs.getString("timezone", "Asia/Shanghai") ?: "") }
+    
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("用户画像设置") },
+        text = {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState())
+            ) {
+                OutlinedTextField(
+                    value = userName,
+                    onValueChange = { userName = it },
+                    label = { Text("用户名") },
+                    placeholder = { Text("例如: 张三") },
+                    modifier = Modifier.fillMaxWidth()
+                )
+                
+                Spacer(modifier = Modifier.height(8.dp))
+                
+                OutlinedTextField(
+                    value = userRole,
+                    onValueChange = { userRole = it },
+                    label = { Text("角色/职业") },
+                    placeholder = { Text("例如: 软件工程师") },
+                    modifier = Modifier.fillMaxWidth()
+                )
+                
+                Spacer(modifier = Modifier.height(8.dp))
+                
+                OutlinedTextField(
+                    value = timezone,
+                    onValueChange = { timezone = it },
+                    label = { Text("时区") },
+                    placeholder = { Text("例如: Asia/Shanghai") },
+                    modifier = Modifier.fillMaxWidth()
+                )
+                
+                Spacer(modifier = Modifier.height(8.dp))
+                
+                OutlinedTextField(
+                    value = userPreferences,
+                    onValueChange = { userPreferences = it },
+                    label = { Text("偏好设置") },
+                    placeholder = { Text("例如: 简洁回复, 中文输出") },
+                    modifier = Modifier.fillMaxWidth(),
+                    minLines = 3,
+                    maxLines = 5
+                )
+                
+                Spacer(modifier = Modifier.height(16.dp))
+                
+                // 记忆条目列表
+                Text(
+                    text = "持久记忆条目:",
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Medium
+                )
+                
+                Spacer(modifier = Modifier.height(8.dp))
+                
+                val memories = prefs.getStringSet("memories", emptySet()) ?: emptySet()
+                if (memories.isEmpty()) {
+                    Text(
+                        text = "暂无记忆条目",
+                        fontSize = 12.sp,
+                        color = Color.Gray
+                    )
+                } else {
+                    LazyColumn(
+                        modifier = Modifier.height(200.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        items(memories.toList()) { memory ->
+                            Surface(
+                                color = Color(0xFFF5F5F5),
+                                shape = RoundedCornerShape(4.dp)
+                            ) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Text(
+                                        text = memory,
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .padding(8.dp),
+                                        fontSize = 12.sp
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    prefs.edit().apply {
+                        putString("user_name", userName)
+                        putString("user_role", userRole)
+                        putString("user_preferences", userPreferences)
+                        putString("timezone", timezone)
+                        apply()
+                    }
+                    onSave()
+                }
+            ) {
+                Text("保存")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("取消")
+            }
+        }
+    )
 }
