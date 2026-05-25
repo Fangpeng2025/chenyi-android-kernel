@@ -1,6 +1,8 @@
 package com.chenyi.agent
 
+import android.content.Context
 import android.os.Bundle
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.animation.core.*
@@ -9,8 +11,10 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import com.chenyi.agent.ui.components.*
 import com.chenyi.agent.ui.theme.*
+import kotlinx.coroutines.launch
 
 /**
  * 晨翼Agent 主 Activity
@@ -39,6 +43,16 @@ class MainActivity : ComponentActivity() {
  */
 @Composable
 fun MainAppContent() {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    
+    // 更新管理器
+    val updateManager = remember { UpdateManager(context) }
+    var isCheckingUpdate by remember { mutableStateOf(false) }
+    var updateAvailable by remember { mutableStateOf(false) }
+    var versionInfo by remember { mutableStateOf<UpdateManager.VersionInfo?>(null) }
+    var downloadProgress by remember { mutableStateOf(0) }
+    
     // 当前选中的标签页
     var selectedTab by remember { mutableStateOf(0) }
 
@@ -61,7 +75,62 @@ fun MainAppContent() {
     var compressionThreshold by remember { mutableStateOf(4000) }
     var compressionRatio by remember { mutableStateOf(50) }
     var accessibilityEnabled by remember { mutableStateOf(true) }
-    val appVersion = "v1.0.16"
+    val appVersion = updateManager.getCurrentVersionName()
+    
+    // 检查更新函数
+    fun checkForUpdate() {
+        if (isCheckingUpdate) return
+        
+        scope.launch {
+            isCheckingUpdate = true
+            downloadProgress = 0
+            
+            val result = updateManager.checkForUpdate()
+            
+            result.fold(
+                onSuccess = { info ->
+                    if (info != null) {
+                        versionInfo = info
+                        updateAvailable = true
+                        Toast.makeText(context, "发现新版本 v${info.versionName}", Toast.LENGTH_LONG).show()
+                    } else {
+                        updateAvailable = false
+                        Toast.makeText(context, "当前已是最新版本", Toast.LENGTH_SHORT).show()
+                    }
+                },
+                onFailure = { error ->
+                    Toast.makeText(context, "检查更新失败: ${error.message}", Toast.LENGTH_SHORT).show()
+                }
+            )
+            
+            isCheckingUpdate = false
+        }
+    }
+    
+    // 下载并安装更新函数
+    fun downloadAndInstall() {
+        val info = versionInfo ?: return
+        
+        scope.launch {
+            val result = updateManager.downloadApk(info) { progress ->
+                downloadProgress = progress
+            }
+            
+            result.fold(
+                onSuccess = { apkPath ->
+                    downloadProgress = 100
+                    Toast.makeText(context, "下载完成，正在安装...", Toast.LENGTH_SHORT).show()
+                    
+                    // 安装 APK
+                    updateManager.installApk(apkPath)
+                },
+                onFailure = { error ->
+                    Toast.makeText(context, "下载失败: ${error.message}", Toast.LENGTH_SHORT).show()
+                    downloadProgress = 0
+                }
+            )
+        }
+    }
 
     Box(
         modifier = Modifier
@@ -233,14 +302,24 @@ fun MainAppContent() {
                             compressionRatio = ratio
                         },
                         onAccessibilityClick = {
-                            // TODO: 打开无障碍服务设置
+                            // TODO: 跳转到无障碍服务设置
                         },
                         onAboutClick = {
                             // TODO: 显示关于对话框
                         },
                         onCheckUpdate = {
-                            // TODO: 检查更新
-                        }
+                            if (updateAvailable && versionInfo != null) {
+                                // 已有新版本，直接下载
+                                downloadAndInstall()
+                            } else {
+                                // 检查更新
+                                checkForUpdate()
+                            }
+                        },
+                        isCheckingUpdate = isCheckingUpdate,
+                        updateAvailable = updateAvailable,
+                        versionInfo = versionInfo,
+                        downloadProgress = downloadProgress
                     )
                 }
             }

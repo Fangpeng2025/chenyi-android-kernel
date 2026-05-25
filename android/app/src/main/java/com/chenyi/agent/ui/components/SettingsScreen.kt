@@ -25,6 +25,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.chenyi.agent.ui.theme.*
+import com.chenyi.agent.UpdateManager
 
 // ==================== Data Models ====================
 
@@ -107,7 +108,11 @@ fun SettingsScreen(
     onAccessibilityClick: () -> Unit,
     onAboutClick: () -> Unit,
     onCheckUpdate: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    isCheckingUpdate: Boolean = false,
+    updateAvailable: Boolean = false,
+    versionInfo: UpdateManager.VersionInfo? = null,
+    downloadProgress: Int = 0
 ) {
     LazyColumn(
         modifier = modifier
@@ -221,7 +226,11 @@ fun SettingsScreen(
         item {
             AutoUpdateButton(
                 onCheckUpdate = onCheckUpdate,
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                isChecking = isCheckingUpdate,
+                updateAvailable = updateAvailable,
+                versionInfo = versionInfo,
+                downloadProgress = downloadProgress
             )
         }
 
@@ -626,13 +635,23 @@ fun SettingsSliderItem(
 
 /**
  * 自动更新按钮组件
+ * 
+ * 功能：
+ * - 检查服务器最新版本
+ * - 下载 APK 文件
+ * - 安装更新
+ * 
+ * 服务器：
+ * - https://oneapi.xintiandi.online/chenyi-agent/
  */
 @Composable
 fun AutoUpdateButton(
     onCheckUpdate: () -> Unit,
     modifier: Modifier = Modifier,
     isChecking: Boolean = false,
-    updateAvailable: Boolean = false
+    updateAvailable: Boolean = false,
+    versionInfo: UpdateManager.VersionInfo? = null,
+    downloadProgress: Int = 0
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
@@ -714,17 +733,43 @@ fun AutoUpdateButton(
 
                 Column {
                     Text(
-                        text = if (updateAvailable) "有新版本可用" else "检查更新",
+                        text = when {
+                            downloadProgress > 0 -> "下载中 $downloadProgress%"
+                            updateAvailable && versionInfo != null -> "v${versionInfo.versionName} 可用"
+                            isChecking -> "检查中..."
+                            else -> "检查更新"
+                        },
                         fontSize = 14.sp,
                         fontWeight = FontWeight.Medium,
                         color = TextPrimary
                     )
-                    if (updateAvailable) {
-                        Text(
-                            text = "点击下载并安装",
-                            fontSize = 11.sp,
-                            color = TextSecondary
-                        )
+                    when {
+                        downloadProgress > 0 -> {
+                            // 下载进度条
+                            LinearProgressIndicator(
+                                progress = downloadProgress / 100f,
+                                modifier = Modifier
+                                    .padding(top = 4.dp)
+                                    .width(80.dp)
+                                    .height(3.dp),
+                                color = AccentCyan,
+                                trackColor = BgTertiary
+                            )
+                        }
+                        updateAvailable && versionInfo != null -> {
+                            Text(
+                                text = "点击下载安装",
+                                fontSize = 11.sp,
+                                color = TextSecondary
+                            )
+                        }
+                        else -> {
+                            Text(
+                                text = "当前已是最新版本",
+                                fontSize = 11.sp,
+                                color = TextMuted
+                            )
+                        }
                     }
                 }
             }

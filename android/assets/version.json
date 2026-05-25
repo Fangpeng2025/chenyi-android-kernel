@@ -1,0 +1,11 @@
+{
+  "versionName": "1.0.17",
+  "versionCode": 10017,
+  "releaseNotes": "【v1.0.17 更新内容】\n\n✨ 新功能\n• 自动更新功能 - 对接服务器\n• 检查更新按钮\n• 下载进度显示\n• 版本信息展示\n• UpdateManager 更新管理器\n\n🎨 UI 优化\n• 渐变色设计系统\n• 粒子动画背景\n• Token 使用进度条\n• 流式消息显示\n\n🔧 技术改进\n• Material3 主题系统\n• Canvas 粒子动画\n• 状态管理优化\n• 性能提升\n• 服务器版本对接",
+  "minAndroidVersion": 21,
+  "apkSize": 8500000,
+  "downloadUrl": "https://oneapi.xintiandi.online/chenyi-agent/chenyi-agent-release.apk",
+  "forceUpdate": false,
+  "buildDate": "2026-05-25",
+  "githubRelease": "https://github.com/Fangpeng2025/chenyi-android-kernel/releases/tag/v1.0.17"
+}
