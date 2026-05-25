@@ -1,6 +1,6 @@
 package com.chenyi.agent.ui.components
 
-import androidx.compose.animation.core.withFrameNanos
+import androidx.compose.animation.core.withInfiniteAnimationFrameNanos
 import androidx.compose.foundation.Canvas
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -104,7 +104,7 @@ fun ParticleBackground(
     // 动画循环
     LaunchedEffect(Unit) {
         while (true) {
-            withFrameNanos { _ ->
+            withInfiniteAnimationFrameNanos { _ ->
                 val width = canvasSize.width.toFloat().coerceAtLeast(1f)
                 val height = canvasSize.height.toFloat().coerceAtLeast(1f)
                 
