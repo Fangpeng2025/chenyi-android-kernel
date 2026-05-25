@@ -139,14 +139,14 @@ class UpdateManager(private val context: Context) {
             // 比较版本号
             if (versionInfo.versionCode > currentVersionCode) {
                 Log.i(TAG, "New version available: ${versionInfo.versionName}")
-                Result.success(versionInfo)
+                return@withContext Result.success(versionInfo)
             } else {
                 Log.i(TAG, "Already up to date")
-                Result.success(null)
+                return@withContext Result.success(null)
             }
         } catch (e: Exception) {
             Log.e(TAG, "Failed to check for updates", e)
-            Result.failure(e)
+            return@withContext Result.failure(e)
         }
     }
     
@@ -208,10 +208,10 @@ class UpdateManager(private val context: Context) {
             }
             
             Log.i(TAG, "Download completed: ${apkFile.absolutePath}")
-            Result.success(apkFile.absolutePath)
+            return@withContext Result.success(apkFile.absolutePath)
         } catch (e: Exception) {
             Log.e(TAG, "Failed to download APK", e)
-            Result.failure(e)
+            return@withContext Result.failure(e)
         }
     }
     
@@ -252,10 +252,10 @@ class UpdateManager(private val context: Context) {
             
             context.startActivity(intent)
             Log.i(TAG, "Install intent started")
-            Result.success(Unit)
+            return Result.success(Unit)
         } catch (e: Exception) {
             Log.e(TAG, "Failed to install APK", e)
-            Result.failure(e)
+            return Result.failure(e)
         }
     }
     
