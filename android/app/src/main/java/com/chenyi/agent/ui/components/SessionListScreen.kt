@@ -226,13 +226,20 @@ fun SessionItem(
     val timeFormat = remember { SimpleDateFormat("HH:mm", Locale.getDefault()) }
     val dateFormat = remember { SimpleDateFormat("MM月dd日", Locale.getDefault()) }
 
-    val timeString = remember(session.lastMessageTime) {
+    // 使用扩展函数计算显示字段
+    val preview = remember(session.id) { session.getPreview() }
+    val avatarText = remember(session.id) { session.getAvatarText() }
+    val avatarGradient = remember(session.id) { session.getAvatarGradient() }
+    val lastMessageTime = remember(session.id) { session.getLastMessageTime() }
+    val hasNewMessage = remember(session.id) { session.hasNewMessage() }
+
+    val timeString = remember(lastMessageTime) {
         val now = System.currentTimeMillis()
-        val diff = now - session.lastMessageTime
+        val diff = now - lastMessageTime
         when {
-            diff < 24 * 60 * 60 * 1000 -> timeFormat.format(Date(session.lastMessageTime))
+            diff < 24 * 60 * 60 * 1000 -> timeFormat.format(Date(lastMessageTime))
             diff < 7 * 24 * 60 * 60 * 1000 -> "昨天"
-            else -> dateFormat.format(Date(session.lastMessageTime))
+            else -> dateFormat.format(Date(lastMessageTime))
         }
     }
 
@@ -268,7 +275,7 @@ fun SessionItem(
                     .width(3.dp)
                     .height(48.dp)
                     .background(
-                        brush = Brush.verticalGradient(session.avatarGradient),
+                        brush = Brush.verticalGradient(avatarGradient),
                         shape = RoundedCornerShape(2.dp)
                     )
             ) {
@@ -286,13 +293,13 @@ fun SessionItem(
                     modifier = Modifier
                         .size(48.dp)
                         .background(
-                            brush = Brush.linearGradient(session.avatarGradient),
+                            brush = Brush.linearGradient(avatarGradient),
                             shape = RoundedCornerShape(14.dp)
                         ),
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
-                        text = session.avatarText,
+                        text = avatarText,
                         fontSize = 18.sp,
                         fontWeight = FontWeight.Bold,
                         color = Color.White
@@ -313,7 +320,7 @@ fun SessionItem(
                         overflow = TextOverflow.Ellipsis
                     )
                     Text(
-                        text = session.preview,
+                        text = preview,
                         fontSize = 12.sp,
                         color = TextSecondary,
                         maxLines = 1,
@@ -332,7 +339,7 @@ fun SessionItem(
                         fontFamily = FontFamily.Monospace,
                         color = TextMuted
                     )
-                    if (session.hasNewMessage) {
+                    if (hasNewMessage) {
                         Box(
                             modifier = Modifier
                                 .size(8.dp)
@@ -342,7 +349,6 @@ fun SessionItem(
                 }
             }
         }
-    }
 }
 
 // ==================== Preview ====================
@@ -352,33 +358,21 @@ fun SessionListScreenPreview() {
     val sampleSessions = listOf(
         Session(
             id = "1",
-            title = "截图与OCR识别",
-            preview = "帮我截个图，然后识别一下屏幕上的文字",
-            avatarText = "截",
-            avatarGradient = GradientPrimary,
-            lastMessageTime = System.currentTimeMillis() - 60000,
-            hasNewMessage = true
+            title = "截图与OCR识别"
         ),
         Session(
             id = "2",
-            title = "设置API配置",
-            preview = "API Key 和 Endpoint 的配置说明",
-            avatarText = "设",
-            avatarGradient = listOf(AccentPurple, AccentPink),
-            lastMessageTime = System.currentTimeMillis() - 24 * 60 * 60 * 1000
+            title = "设置API配置"
         ),
         Session(
             id = "3",
-            title = "定时任务讨论",
-            preview = "如何创建自动化的定时提醒任务",
-            avatarText = "任",
-            avatarGradient = listOf(AccentGreen, Color(0xFF10B981)),
-            lastMessageTime = System.currentTimeMillis() - 2 * 24 * 60 * 60 * 1000
+            title = "定时任务讨论"
         )
     )
-
+    
     SessionListScreen(
         sessions = sampleSessions,
-        onSessionClick = {}
+        onSessionClick = {},
+        onSearchQueryChange = {}
     )
 }
