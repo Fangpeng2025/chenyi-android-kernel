@@ -27,6 +27,11 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.chenyi.agent.Session
+import com.chenyi.agent.getPreview
+import com.chenyi.agent.getAvatarText
+import com.chenyi.agent.getAvatarGradient
+import com.chenyi.agent.getLastMessageTime
+import com.chenyi.agent.hasNewMessage
 import com.chenyi.agent.ui.theme.*
 import java.text.SimpleDateFormat
 import java.util.*
@@ -349,6 +354,7 @@ fun SessionItem(
                 }
             }
         }
+    }
 }
 
 // ==================== Preview ====================
