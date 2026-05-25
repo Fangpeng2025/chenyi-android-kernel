@@ -559,6 +559,7 @@ fun ToggleSwitch(
 /**
  * 设置滑块项组件
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsSliderItem(
     label: String,

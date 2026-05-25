@@ -26,31 +26,10 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.chenyi.agent.Session
 import com.chenyi.agent.ui.theme.*
 import java.text.SimpleDateFormat
 import java.util.*
-
-// ==================== Data Models ====================
-
-/**
- * 会话数据类
- * @param id 会话ID
- * @param title 会话标题
- * @param preview 预览文本
- * @param avatarText 头像文字
- * @param avatarGradient 头像渐变色
- * @param lastMessageTime 最后消息时间
- * @param hasNewMessage 是否有新消息
- */
-data class Session(
-    val id: String,
-    val title: String,
-    val preview: String,
-    val avatarText: String,
-    val avatarGradient: List<Color> = GradientPrimary,
-    val lastMessageTime: Long = System.currentTimeMillis(),
-    val hasNewMessage: Boolean = false
-)
 
 // ==================== Main Session List Screen ====================
 

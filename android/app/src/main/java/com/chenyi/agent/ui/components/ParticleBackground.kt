@@ -119,8 +119,9 @@ fun ParticleBackground(
         modifier = modifier
     ) {
         // 更新画布尺寸
-        if (canvasSize != size) {
-            canvasSize = IntSize(size.width.toInt(), size.height.toInt())
+        val currentSize = IntSize(size.width.toInt(), size.height.toInt())
+        if (canvasSize != currentSize) {
+            canvasSize = currentSize
         }
 
         val width = size.width
