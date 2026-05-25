@@ -14,9 +14,9 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import com.chenyi.agent.ui.components.*
-import com.chenyi.agent.ui.components.TaskStatus
+import com.chenyi.agent.ui.components.WeChatBottomBar
 import com.chenyi.agent.ui.theme.*
-import kotlinx.coroutines.launch
+import com.chenyi.agent.UpdateManager
 
 /**
  * 晨翼Agent 主 Activity
@@ -58,32 +58,26 @@ fun MainAppContent() {
     // 当前选中的标签页
     var selectedTab by remember { mutableStateOf(0) }
 
-    // 聊天相关状态
+// 聊天相关状态
     var chatMessages by remember { mutableStateOf(listOf<ChatMessage>()) }
     var tokenUsage by remember { mutableStateOf(0) }
     val maxTokens = 4096
-
-    // 会话列表状态
-    var sessions by remember { mutableStateOf(listOf<Session>()) }
-
-    // 任务列表状态
-    var tasks by remember { mutableStateOf(listOf<Task>()) }
-
-    // 设置状态
-    var apiKey by remember { mutableStateOf<String?>(null) }
-    var apiEndpoint by remember { mutableStateOf("api.openai.com") }
-    var modelName by remember { mutableStateOf("glm-5") }
-    var compressionEnabled by remember { mutableStateOf(true) }
-    var compressionThreshold by remember { mutableStateOf(4000) }
-    var compressionRatio by remember { mutableStateOf(50) }
-    var accessibilityEnabled by remember { mutableStateOf(true) }
-    val appVersion = updateManager.getCurrentVersionName()
     
-    // 检查更新函数
-    fun checkForUpdate() {
-        if (isCheckingUpdate) return
-        
-        scope.launch {
+    // API 配置状态
+    var apiKey by remember { mutableStateOf("") }
+    var apiEndpoint by remember { mutableStateOf("https://api.openai.com/v1") }
+    var modelName by remember { mutableStateOf("gpt-4") }
+    
+    // 压缩配置状态
+    var compressionEnabled by remember { mutableStateOf(true) }
+    var compressionThreshold by remember { mutableStateOf(100) }
+    var compressionRatio by remember { mutableStateOf(70) }
+    
+    // 无障碍服务状态
+    var accessibilityEnabled by remember { mutableStateOf(false) }
+    
+    // 应用版本
+    val appVersion = "v1.0.18"
             isCheckingUpdate = true
             downloadProgress = 0
             
@@ -177,22 +171,9 @@ fun MainAppContent() {
                         }
                     )
                 }
-
-                // 会话列表页面
+                
+                // 工具页面（技能）
                 if (selectedTab == 1) {
-                    SessionListScreen(
-                        sessions = sessions,
-                        onSessionClick = { session ->
-                            // TODO: 切换到该会话
-                        },
-                        onSearchQueryChange = { query ->
-                            // TODO: 搜索会话
-                        }
-                    )
-                }
-
-                // 工具页面
-                if (selectedTab == 2) {
                     ToolsScreen(
                         onToolClick = { tool ->
                             // TODO: 执行工具操作
@@ -225,48 +206,10 @@ fun MainAppContent() {
                         }
                     )
                 }
-
-                // 任务页面
-                if (selectedTab == 3) {
-                    TaskScreen(
-                        tasks = tasks,
-                        onTaskClick = { task ->
-                            // TODO: 显示任务详情
-                        },
-                        onCreateTask = { name, description, schedule ->
-                            // 创建新任务
-                            val newTask = Task(
-                                id = System.currentTimeMillis().toString(),
-                                name = name,
-                                description = description,
-                                status = TaskStatus.RUNNING,
-                                schedule = schedule
-                            )
-                            tasks = tasks + newTask
-                        },
-                        onPauseTask = { task ->
-                            // 切换任务状态
-                            tasks = tasks.map {
-                                if (it.id == task.id) {
-                                    it.copy(
-                                        status = if (it.status == TaskStatus.RUNNING) {
-                                            TaskStatus.PAUSED
-                                        } else {
-                                            TaskStatus.RUNNING
-                                        }
-                                    )
-                                } else it
-                            }
-                        },
-                        onDeleteTask = { task ->
-                            // 删除任务
-                            tasks = tasks.filter { it.id != task.id }
-                        }
-                    )
-                }
-
+                
                 // 设置页面
-                if (selectedTab == 4) {
+                // 设置页面
+                if (selectedTab == 2) {
                     SettingsScreen(
                         apiKey = apiKey,
                         apiEndpoint = apiEndpoint,
@@ -276,14 +219,14 @@ fun MainAppContent() {
                         compressionRatio = compressionRatio,
                         accessibilityEnabled = accessibilityEnabled,
                         appVersion = appVersion,
-                        onApiKeyClick = {
-                            // TODO: 显示 API Key 输入对话框
+                        onApiKeyChange = { newKey ->
+                            apiKey = newKey
                         },
-                        onApiEndpointClick = {
-                            // TODO: 显示 API Endpoint 输入对话框
+                        onApiEndpointChange = { newEndpoint ->
+                            apiEndpoint = newEndpoint
                         },
-                        onModelNameClick = {
-                            // TODO: 显示模型选择对话框
+                        onModelNameChange = { newModel ->
+                            modelName = newModel
                         },
                         onUserProfileClick = {
                             // TODO: 打开用户画像编辑页面
@@ -303,6 +246,7 @@ fun MainAppContent() {
                         onAboutClick = {
                             // TODO: 显示关于对话框
                         },
+                        },
                         onCheckUpdate = {
                             if (updateAvailable && versionInfo != null) {
                                 // 已有新版本，直接下载
@@ -320,8 +264,8 @@ fun MainAppContent() {
                 }
             }
 
-            // 底部导航栏
-            ModernBottomBar(
+            // 底部导航栏 - 微信风格3个标签
+            WeChatBottomBar(
                 selectedTab = selectedTab,
                 onTabSelected = { newTab ->
                     selectedTab = newTab
