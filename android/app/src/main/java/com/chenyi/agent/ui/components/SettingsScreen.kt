@@ -420,7 +420,7 @@ fun InputDialog(
         text = {
             OutlinedTextField(
                 value = value,
-                onValueChange = { newValue -> value = newValue },
+                onValueChange = { newValue: String -> value = newValue },
                 singleLine = true,
                 visualTransformation = if (isPassword) PasswordVisualTransformation() else VisualTransformation,
                 modifier = Modifier.fillMaxWidth()
