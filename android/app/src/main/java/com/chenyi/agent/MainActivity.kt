@@ -14,6 +14,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import com.chenyi.agent.ui.components.*
+import com.chenyi.agent.ui.components.TaskStatus
 import com.chenyi.agent.ui.theme.*
 import kotlinx.coroutines.launch
 
