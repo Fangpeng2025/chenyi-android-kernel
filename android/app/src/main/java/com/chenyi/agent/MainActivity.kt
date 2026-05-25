@@ -85,23 +85,20 @@ fun MainAppContent() {
             isCheckingUpdate = true
             downloadProgress = 0
             
-            val result = updateManager.checkForUpdate()
-            
-            result.fold(
-                onSuccess = { info ->
-                    if (info != null) {
-                        versionInfo = info
-                        updateAvailable = true
-                        Toast.makeText(context, "发现新版本 v${info.versionName}", Toast.LENGTH_LONG).show()
-                    } else {
-                        updateAvailable = false
-                        Toast.makeText(context, "当前已是最新版本", Toast.LENGTH_SHORT).show()
-                    }
-                },
-                onFailure = { error ->
-                    Toast.makeText(context, "检查更新失败: ${error.message}", Toast.LENGTH_SHORT).show()
+            try {
+                val info = updateManager.checkForUpdate()
+                
+                if (info != null) {
+                    versionInfo = info
+                    updateAvailable = true
+                    Toast.makeText(context, "发现新版本 v${info.versionName}", Toast.LENGTH_LONG).show()
+                } else {
+                    updateAvailable = false
+                    Toast.makeText(context, "当前已是最新版本", Toast.LENGTH_SHORT).show()
                 }
-            )
+            } catch (e: Exception) {
+                Toast.makeText(context, "检查更新失败: ${e.message}", Toast.LENGTH_SHORT).show()
+            }
             
             isCheckingUpdate = false
         }
@@ -112,23 +109,20 @@ fun MainAppContent() {
         val info = versionInfo ?: return
         
         scope.launch {
-            val result = updateManager.downloadApk(info) { progress ->
-                downloadProgress = progress
-            }
-            
-            result.fold(
-                onSuccess = { apkPath ->
-                    downloadProgress = 100
-                    Toast.makeText(context, "下载完成，正在安装...", Toast.LENGTH_SHORT).show()
-                    
-                    // 安装 APK
-                    updateManager.installApk(apkPath)
-                },
-                onFailure = { error ->
-                    Toast.makeText(context, "下载失败: ${error.message}", Toast.LENGTH_SHORT).show()
-                    downloadProgress = 0
+            try {
+                val apkPath = updateManager.downloadApk(info) { progress ->
+                    downloadProgress = progress
                 }
-            )
+                
+                downloadProgress = 100
+                Toast.makeText(context, "下载完成，正在安装...", Toast.LENGTH_SHORT).show()
+                
+                // 安装 APK
+                updateManager.installApk(apkPath)
+            } catch (e: Exception) {
+                Toast.makeText(context, "下载失败: ${e.message}", Toast.LENGTH_SHORT).show()
+                downloadProgress = 0
+            }
         }
     }
 

@@ -100,8 +100,9 @@ class UpdateManager(private val context: Context) {
      * 检查服务器上的最新版本
      * 
      * @return VersionInfo 如果有新版本，否则返回 null
+     * @throws Exception 如果检查失败
      */
-    suspend fun checkForUpdate(): Result<VersionInfo?> = withContext(Dispatchers.IO) {
+    suspend fun checkForUpdate(): VersionInfo? = withContext(Dispatchers.IO) {
         try {
             Log.d(TAG, "Checking for updates from $VERSION_URL")
             
@@ -139,14 +140,14 @@ class UpdateManager(private val context: Context) {
             // 比较版本号
             if (versionInfo.versionCode > currentVersionCode) {
                 Log.i(TAG, "New version available: ${versionInfo.versionName}")
-                return@withContext Result.success(versionInfo)
+                versionInfo
             } else {
                 Log.i(TAG, "Already up to date")
-                return@withContext Result.success(null)
+                null
             }
         } catch (e: Exception) {
             Log.e(TAG, "Failed to check for updates", e)
-            return@withContext Result.failure(e)
+            throw e
         }
     }
     
@@ -156,11 +157,12 @@ class UpdateManager(private val context: Context) {
      * @param versionInfo 版本信息
      * @param onProgress 进度回调 (0-100)
      * @return 下载完成的 APK 文件路径
+     * @throws Exception 如果下载失败
      */
     suspend fun downloadApk(
         versionInfo: VersionInfo,
         onProgress: (Int) -> Unit = {}
-    ): Result<String> = withContext(Dispatchers.IO) {
+    ): String = withContext(Dispatchers.IO) {
         try {
             Log.d(TAG, "Downloading APK from ${versionInfo.downloadUrl}")
             
@@ -208,10 +210,10 @@ class UpdateManager(private val context: Context) {
             }
             
             Log.i(TAG, "Download completed: ${apkFile.absolutePath}")
-            return@withContext Result.success(apkFile.absolutePath)
+            apkFile.absolutePath
         } catch (e: Exception) {
             Log.e(TAG, "Failed to download APK", e)
-            return@withContext Result.failure(e)
+            throw e
         }
     }
     
@@ -219,13 +221,14 @@ class UpdateManager(private val context: Context) {
      * 安装 APK
      * 
      * @param apkPath APK 文件路径
+     * @throws Exception 如果安装失败
      */
-    fun installApk(apkPath: String): Result<Unit> {
-        return try {
+    fun installApk(apkPath: String) {
+        try {
             val apkFile = File(apkPath)
             
             if (!apkFile.exists()) {
-                return Result.failure(Exception("APK file not found: $apkPath"))
+                throw Exception("APK file not found: $apkPath")
             }
             
             Log.d(TAG, "Installing APK from $apkPath")
@@ -252,10 +255,9 @@ class UpdateManager(private val context: Context) {
             
             context.startActivity(intent)
             Log.i(TAG, "Install intent started")
-            return Result.success(Unit)
         } catch (e: Exception) {
             Log.e(TAG, "Failed to install APK", e)
-            return Result.failure(e)
+            throw e
         }
     }
     
@@ -271,47 +273,6 @@ class UpdateManager(private val context: Context) {
             }
         } catch (e: Exception) {
             Log.e(TAG, "Failed to cleanup APK file", e)
-        }
-    }
-    
-    /**
-     * 检查并安装更新（完整流程）
-     * 
-     * @param onStatusUpdate 状态更新回调
-     * @return 是否成功启动安装
-     */
-    suspend fun checkAndInstallUpdate(
-        onStatusUpdate: (UpdateStatus) -> Unit = {}
-    ): Result<Boolean> {
-        return try {
-            // 1. 检查更新
-            onStatusUpdate(UpdateStatus.Checking)
-            val checkResult = checkForUpdate()
-            
-            val versionInfo = checkResult.getOrNull()
-                ?: return Result.success(false) // 已是最新版本
-            
-            // 2. 有新版本
-            onStatusUpdate(UpdateStatus.Available(versionInfo))
-            
-            // 3. 下载 APK
-            val downloadResult = downloadApk(versionInfo) { progress ->
-                onStatusUpdate(UpdateStatus.Downloading(progress))
-            }
-            
-            val apkPath = downloadResult.getOrNull()
-                ?: return Result.failure(downloadResult.exceptionOrNull() ?: Exception("Download failed"))
-            
-            // 4. 下载完成
-            onStatusUpdate(UpdateStatus.Downloaded(apkPath))
-            
-            // 5. 安装
-            val installResult = installApk(apkPath)
-            
-            Result.success(installResult.isSuccess)
-        } catch (e: Exception) {
-            onStatusUpdate(UpdateStatus.Error(e.message ?: "Unknown error"))
-            Result.failure(e)
         }
     }
 }
