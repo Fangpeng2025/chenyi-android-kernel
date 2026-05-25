@@ -13,8 +13,8 @@ defaultConfig {
         applicationId = "com.chenyi.agent"
         minSdk = 29
         targetSdk = 34
-        versionCode = 10018
-        versionName = "1.0.18"
+        versionCode = 10019
+        versionName = "1.0.19"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {

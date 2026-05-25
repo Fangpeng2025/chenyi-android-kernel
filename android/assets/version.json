@@ -1,7 +1,7 @@
 {
-  "versionName": "1.0.18",
-  "versionCode": 10018,
-  "releaseNotes": "【v1.0.18 更新内容】\n\n✨ 新功能\n• 自动更新功能 - 对接服务器\n• 检查更新按钮\n• 下载进度显示\n• 版本信息展示\n• UpdateManager 更新管理器\n\n🎨 UI 重构\n• 渐变色设计系统\n• 粒子动画背景\n• Token 使用进度条\n• 流式消息显示\n• 现代化底部导航栏\n• 会话列表优化\n\n🔧 技术改进\n• Compose BOM 2024.02.00 稳定版\n• Material3 主题系统\n• Canvas 粒子动画\n• 性能提升\n• Session 扩展函数设计模式\n\n📦 自动更新使用方法\n1. 进入「设置」页面\n2. 点击「检查更新」\n3. 发现新版本后点击「下载」\n4. 下载完成自动弹出安装界面",
+  "versionName": "1.0.19",
+  "versionCode": 10019,
+  "releaseNotes": "【v1.0.19 更新内容】\n\n🎨 底部菜单栏修复\n• 微信风格3标签设计（聊天、技能、设置）\n• 选中状态动画效果\n• 简洁现代的设计\n\n🔧 设置页面实际功能\n• API Key 输入对话框（密码模式）\n• API Endpoint 配置\n• 模型名称配置\n• 用户画像入口\n• 上下文压缩配置\n• 检查更新功能\n\n✨ 用户体验提升\n• 点击即可编辑配置\n• 实时保存配置\n• 清晰的视觉反馈",
   "minAndroidVersion": 29,
   "apkSize": 134217728,
   "downloadUrl": "https://oneapi.xintiandi.online/chenyi-agent/chenyi-agent-release.apk",
