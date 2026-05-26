@@ -16,12 +16,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.chenyi.agent.data.ConfigManager
 import com.chenyi.agent.data.ConfigValidator
 import com.chenyi.agent.data.UserProfile
 import com.chenyi.agent.ui.components.*
 import com.chenyi.agent.ui.components.TaskStatus
 import com.chenyi.agent.ui.theme.*
+import com.chenyi.agent.viewmodel.MainViewModel
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
@@ -32,8 +34,8 @@ import kotlinx.coroutines.launch
  * - 使用 ChenyiAgentTheme 主题
  * - 粒子背景动画
  * - 现代化底部导航栏
- * - 5 个标签页切换
- * - 完全仿制 HTML 样式
+ * - 3 个标签页切换（聊天/技能/设置）
+ * - MVVM 架构（ViewModel 管理状态）
  */
 class MainActivity : ComponentActivity() {
 
@@ -48,15 +50,33 @@ class MainActivity : ComponentActivity() {
 }
 
 /**
- * 主应用内容组件
+ * 主应用内容组件 - 使用 ViewModel 管理状态
  */
 @Composable
 fun MainAppContent() {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     
-    // 配置管理器
-    val configManager = remember { ConfigManager(context) }
+    // ViewModel 管理所有状态
+    val viewModel: MainViewModel = viewModel {
+        MainViewModel(ConfigManager(context))
+    }
+    
+    // 从 ViewModel 收集状态
+    val apiKey by viewModel.apiKey.collectAsState()
+    val apiEndpoint by viewModel.apiEndpoint.collectAsState()
+    val modelName by viewModel.modelName.collectAsState()
+    val userProfile by viewModel.userProfile.collectAsState()
+    val isLoading by viewModel.isLoading.collectAsState()
+    
+    // 对话框状态
+    val showApiKeyDialog by viewModel.showApiKeyDialog.collectAsState()
+    val showApiEndpointDialog by viewModel.showApiEndpointDialog.collectAsState()
+    val showModelNameDialog by viewModel.showModelNameDialog.collectAsState()
+    val showUserProfileDialog by viewModel.showUserProfileDialog.collectAsState()
+    val showAboutDialog by viewModel.showAboutDialog.collectAsState()
+    
+    // 配置验证器
     val configValidator = remember { ConfigValidator(context) }
     
     // 更新管理器
@@ -74,39 +94,12 @@ fun MainAppContent() {
     var tokenUsage by remember { mutableStateOf(0) }
     val maxTokens = 4096
     
-    // 设置状态（从 DataStore 加载）
-    var apiKey by remember { mutableStateOf<String?>(null) }
-    var apiEndpoint by remember { mutableStateOf("api.openai.com") }
-    var modelName by remember { mutableStateOf("glm-5") }
+    // 压缩配置（暂时保留在本地，后续迁移到 ViewModel）
     var compressionEnabled by remember { mutableStateOf(true) }
     var compressionThreshold by remember { mutableStateOf(4000) }
     var compressionRatio by remember { mutableStateOf(50) }
     var accessibilityEnabled by remember { mutableStateOf(true) }
     val appVersion = updateManager.getCurrentVersionName()
-    
-    // 对话框状态
-    var showApiKeyDialog by remember { mutableStateOf(false) }
-    var showApiEndpointDialog by remember { mutableStateOf(false) }
-    var showModelNameDialog by remember { mutableStateOf(false) }
-    var showUserProfileDialog by remember { mutableStateOf(false) }
-    var showAboutDialog by remember { mutableStateOf(false) }
-    var userProfile by remember { mutableStateOf<UserProfile?>(null) }
-    
-    // 加载已保存的配置
-    LaunchedEffect(Unit) {
-        // 加载 API 配置
-        apiKey = configManager.getApiKey().first()
-        apiEndpoint = configManager.getApiEndpoint().first()
-        modelName = configManager.getModelName().first()
-        
-        // 加载压缩配置
-        compressionEnabled = configManager.getCompressionEnabled().first()
-        compressionThreshold = configManager.getCompressionThreshold().first()
-        compressionRatio = configManager.getCompressionRatio().first()
-        
-        // 加载用户画像
-        userProfile = configManager.getUserProfile().first()
-    }
     
     // 检查更新函数
     fun checkForUpdate() {
@@ -325,13 +318,9 @@ onCompressionToggle = { enabled ->
         if (showApiKeyDialog) {
             ApiKeyDialog(
                 currentValue = apiKey,
-                onDismiss = { showApiKeyDialog = false },
+                onDismiss = { viewModel.hideApiKeyDialog() },
                 onConfirm = { newKey ->
-                    apiKey = newKey
-                    showApiKeyDialog = false
-                    scope.launch {
-                        configManager.saveApiKey(newKey)
-                    }
+                    viewModel.saveApiKey(newKey)
                     Toast.makeText(context, "API Key 已保存", Toast.LENGTH_SHORT).show()
                 },
                 validator = configValidator
@@ -341,13 +330,9 @@ onCompressionToggle = { enabled ->
         if (showApiEndpointDialog) {
             ApiEndpointDialog(
                 currentValue = apiEndpoint,
-                onDismiss = { showApiEndpointDialog = false },
+                onDismiss = { viewModel.hideApiEndpointDialog() },
                 onConfirm = { newEndpoint ->
-                    apiEndpoint = newEndpoint
-                    showApiEndpointDialog = false
-                    scope.launch {
-                        configManager.saveApiEndpoint(newEndpoint)
-                    }
+                    viewModel.saveApiEndpoint(newEndpoint)
                     Toast.makeText(context, "API Endpoint 已保存", Toast.LENGTH_SHORT).show()
                 },
                 validator = configValidator
@@ -357,13 +342,13 @@ onCompressionToggle = { enabled ->
         if (showModelNameDialog) {
             ModelNameDialog(
                 currentValue = modelName,
-                onDismiss = { showModelNameDialog = false },
+                onDismiss = { viewModel.hideModelNameDialog() },
                 onConfirm = { newModel ->
-                    modelName = newModel
-                    showModelNameDialog = false
-                    scope.launch {
-                        configManager.saveModelName(newModel)
-                    }
+                    viewModel.saveModelName(newModel)
+                    Toast.makeText(context, "Model Name 已保存", Toast.LENGTH_SHORT).show()
+                }
+            )
+        }
                     Toast.makeText(context, "模型已切换为 $newModel", Toast.LENGTH_SHORT).show()
                 }
             )
