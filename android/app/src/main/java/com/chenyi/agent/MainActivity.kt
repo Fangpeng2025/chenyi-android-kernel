@@ -392,6 +392,8 @@ onCompressionToggle = { enabled ->
         }
     }
 
+}
+
 // ==================== Extension Functions ====================
 
 /**
