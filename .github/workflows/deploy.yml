@@ -195,6 +195,9 @@ jobs:
           scp version.json \
             root@8.147.232.175:/www/wwwroot/xintiandi.online/files/chenyi-agent/version.json
           
+          # 清除 nginx 缓存
+          ssh root@8.147.232.175 "nginx -s reload"
+          
           # 上传官网前端（自动从 version.json 读取版本号）
           ssh root@8.147.232.175 "mkdir -p /www/wwwroot/xintiandi.online/official/"
           scp official/index.html \
