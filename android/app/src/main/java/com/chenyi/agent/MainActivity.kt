@@ -58,8 +58,9 @@ fun MainAppContent() {
     val scope = rememberCoroutineScope()
     
     // ViewModel 管理所有状态
+    val configManager = remember { ConfigManager(context) }
     val viewModel: MainViewModel = viewModel {
-        MainViewModel(ConfigManager(context))
+        MainViewModel(configManager)
     }
     
     // 从 ViewModel 收集状态
@@ -345,10 +346,6 @@ onCompressionToggle = { enabled ->
                 onDismiss = { viewModel.hideModelNameDialog() },
                 onConfirm = { newModel ->
                     viewModel.saveModelName(newModel)
-                    Toast.makeText(context, "Model Name 已保存", Toast.LENGTH_SHORT).show()
-                }
-            )
-        }
                     Toast.makeText(context, "模型已切换为 $newModel", Toast.LENGTH_SHORT).show()
                 }
             )
@@ -357,13 +354,9 @@ onCompressionToggle = { enabled ->
         if (showUserProfileDialog) {
             UserProfileDialog(
                 initialProfile = userProfile,
-                onDismiss = { showUserProfileDialog = false },
+                onDismiss = { viewModel.hideUserProfileDialog() },
                 onSave = { profile ->
-                    userProfile = profile
-                    showUserProfileDialog = false
-                    scope.launch {
-                        configManager.saveUserProfile(profile)
-                    }
+                    viewModel.saveUserProfile(profile)
                     Toast.makeText(context, "用户画像已保存", Toast.LENGTH_SHORT).show()
                 }
             )
@@ -372,11 +365,10 @@ onCompressionToggle = { enabled ->
         if (showAboutDialog) {
             AboutDialog(
                 appVersion = appVersion,
-                onDismiss = { showAboutDialog = false }
+                onDismiss = { viewModel.hideAboutDialog() }
             )
         }
     }
-
 }
 
 // ==================== Extension Functions ====================
