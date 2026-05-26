@@ -320,79 +320,77 @@ onCompressionToggle = { enabled ->
                 }
             )
         }
-    }
 
-    // 对话框层
-    if (showApiKeyDialog) {
-        ApiKeyDialog(
-            currentValue = apiKey,
-            onDismiss = { showApiKeyDialog = false },
-            onConfirm = { newKey ->
-                apiKey = newKey
-                showApiKeyDialog = false
-                scope.launch {
-                    configManager.saveApiKey(newKey)
+        // 对话框层（必须在 Box 内部）
+        if (showApiKeyDialog) {
+            ApiKeyDialog(
+                currentValue = apiKey,
+                onDismiss = { showApiKeyDialog = false },
+                onConfirm = { newKey ->
+                    apiKey = newKey
+                    showApiKeyDialog = false
+                    scope.launch {
+                        configManager.saveApiKey(newKey)
+                    }
+                    Toast.makeText(context, "API Key 已保存", Toast.LENGTH_SHORT).show()
+                },
+                validator = configValidator
+            )
+        }
+
+        if (showApiEndpointDialog) {
+            ApiEndpointDialog(
+                currentValue = apiEndpoint,
+                onDismiss = { showApiEndpointDialog = false },
+                onConfirm = { newEndpoint ->
+                    apiEndpoint = newEndpoint
+                    showApiEndpointDialog = false
+                    scope.launch {
+                        configManager.saveApiEndpoint(newEndpoint)
+                    }
+                    Toast.makeText(context, "API Endpoint 已保存", Toast.LENGTH_SHORT).show()
+                },
+                validator = configValidator
+            )
+        }
+
+        if (showModelNameDialog) {
+            ModelNameDialog(
+                currentValue = modelName,
+                onDismiss = { showModelNameDialog = false },
+                onConfirm = { newModel ->
+                    modelName = newModel
+                    showModelNameDialog = false
+                    scope.launch {
+                        configManager.saveModelName(newModel)
+                    }
+                    Toast.makeText(context, "模型已切换为 $newModel", Toast.LENGTH_SHORT).show()
                 }
-                Toast.makeText(context, "API Key 已保存", Toast.LENGTH_SHORT).show()
-            },
-            validator = configValidator
-        )
-    }
+            )
+        }
 
-    if (showApiEndpointDialog) {
-        ApiEndpointDialog(
-            currentValue = apiEndpoint,
-            onDismiss = { showApiEndpointDialog = false },
-            onConfirm = { newEndpoint ->
-                apiEndpoint = newEndpoint
-                showApiEndpointDialog = false
-                scope.launch {
-                    configManager.saveApiEndpoint(newEndpoint)
+        if (showUserProfileDialog) {
+            UserProfileDialog(
+                initialProfile = userProfile,
+                onDismiss = { showUserProfileDialog = false },
+                onSave = { profile ->
+                    userProfile = profile
+                    showUserProfileDialog = false
+                    scope.launch {
+                        configManager.saveUserProfile(profile)
+                    }
+                    Toast.makeText(context, "用户画像已保存", Toast.LENGTH_SHORT).show()
                 }
-                Toast.makeText(context, "API Endpoint 已保存", Toast.LENGTH_SHORT).show()
-            },
-            validator = configValidator
-        )
-    }
+            )
+        }
 
-    if (showModelNameDialog) {
-        ModelNameDialog(
-            currentValue = modelName,
-            onDismiss = { showModelNameDialog = false },
-            onConfirm = { newModel ->
-                modelName = newModel
-                showModelNameDialog = false
-                scope.launch {
-                    configManager.saveModelName(newModel)
-                }
-                Toast.makeText(context, "模型已切换为 $newModel", Toast.LENGTH_SHORT).show()
-            }
-        )
+        if (showAboutDialog) {
+            AboutDialog(
+                appVersion = appVersion,
+                onDismiss = { showAboutDialog = false }
+            )
+        }
     }
-
-    if (showUserProfileDialog) {
-        UserProfileDialog(
-            initialProfile = userProfile,
-            onDismiss = { showUserProfileDialog = false },
-            onSave = { profile ->
-                userProfile = profile
-                showUserProfileDialog = false
-                scope.launch {
-                    configManager.saveUserProfile(profile)
-                }
-                Toast.makeText(context, "用户画像已保存", Toast.LENGTH_SHORT).show()
-            }
-        )
-    }
-
-    if (showAboutDialog) {
-        AboutDialog(
-            appVersion = appVersion,
-            onDismiss = { showAboutDialog = false }
-        )
-    }
-
-}
 
 // ==================== Extension Functions ====================
 
