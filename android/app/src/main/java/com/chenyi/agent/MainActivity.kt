@@ -16,12 +16,16 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.chenyi.agent.data.ConfigManager
 import com.chenyi.agent.data.ConfigValidator
 import com.chenyi.agent.data.UserProfile
 import com.chenyi.agent.ui.components.*
 import com.chenyi.agent.ui.components.TaskStatus
 import com.chenyi.agent.ui.theme.*
+import com.chenyi.agent.viewmodel.MainViewModel
+import com.chenyi.agent.viewmodel.ChatViewModel
+import com.chenyi.agent.viewmodel.UpdateViewModel
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
@@ -32,8 +36,8 @@ import kotlinx.coroutines.launch
  * - 使用 ChenyiAgentTheme 主题
  * - 粒子背景动画
  * - 现代化底部导航栏
- * - 5 个标签页切换
- * - 完全仿制 HTML 样式
+ * - 3 个标签页切换（聊天/技能/设置）
+ * - MVVM 架构（ViewModel 管理状态）
  */
 class MainActivity : ComponentActivity() {
 
@@ -48,114 +52,58 @@ class MainActivity : ComponentActivity() {
 }
 
 /**
- * 主应用内容组件
+ * 主应用内容组件 - 使用 ViewModel 管理状态
  */
 @Composable
 fun MainAppContent() {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     
-    // 配置管理器
+    // ViewModel 管理所有状态
     val configManager = remember { ConfigManager(context) }
-    val configValidator = remember { ConfigValidator(context) }
+    val mainViewModel: MainViewModel = viewModel {
+        MainViewModel(configManager)
+    }
+    val chatViewModel: ChatViewModel = viewModel()
+    val updateViewModel: UpdateViewModel = viewModel {
+        UpdateViewModel(context, UpdateManager(context))
+    }
     
-    // 更新管理器
-    val updateManager = remember { UpdateManager(context) }
-    var isCheckingUpdate by remember { mutableStateOf(false) }
-    var updateAvailable by remember { mutableStateOf(false) }
-    var versionInfo by remember { mutableStateOf<UpdateManager.VersionInfo?>(null) }
-    var downloadProgress by remember { mutableStateOf(0) }
+    // 从 MainViewModel 收集配置状态
+    val apiKey by mainViewModel.apiKey.collectAsState()
+    val apiEndpoint by mainViewModel.apiEndpoint.collectAsState()
+    val modelName by mainViewModel.modelName.collectAsState()
+    val userProfile by mainViewModel.userProfile.collectAsState()
+    
+    // 从 MainViewModel 收集对话框状态
+    val showApiKeyDialog by mainViewModel.showApiKeyDialog.collectAsState()
+    val showApiEndpointDialog by mainViewModel.showApiEndpointDialog.collectAsState()
+    val showModelNameDialog by mainViewModel.showModelNameDialog.collectAsState()
+    val showUserProfileDialog by mainViewModel.showUserProfileDialog.collectAsState()
+    val showAboutDialog by mainViewModel.showAboutDialog.collectAsState()
+    
+    // 从 ChatViewModel 收集聊天状态
+    val chatMessages by chatViewModel.messages.collectAsState()
+    val tokenUsage by chatViewModel.tokenUsage.collectAsState()
+    
+    // 从 UpdateViewModel 收集更新状态
+    val isCheckingUpdate by updateViewModel.isCheckingUpdate.collectAsState()
+    val updateAvailable by updateViewModel.updateAvailable.collectAsState()
+    val versionInfo by updateViewModel.versionInfo.collectAsState()
+    val downloadProgress by updateViewModel.downloadProgress.collectAsState()
+    val appVersion by updateViewModel.currentVersion.collectAsState()
+    
+    // 配置验证器
+    val configValidator = remember { ConfigValidator(context) }
     
     // 当前选中的标签页
     var selectedTab by remember { mutableStateOf(0) }
-
-    // 聊天相关状态
-    var chatMessages by remember { mutableStateOf(listOf<ChatMessage>()) }
-    var tokenUsage by remember { mutableStateOf(0) }
-    val maxTokens = 4096
     
-    // 设置状态（从 DataStore 加载）
-    var apiKey by remember { mutableStateOf<String?>(null) }
-    var apiEndpoint by remember { mutableStateOf("api.openai.com") }
-    var modelName by remember { mutableStateOf("glm-5") }
+    // 压缩配置（暂时保留在本地，后续迁移到 ViewModel）
     var compressionEnabled by remember { mutableStateOf(true) }
     var compressionThreshold by remember { mutableStateOf(4000) }
     var compressionRatio by remember { mutableStateOf(50) }
     var accessibilityEnabled by remember { mutableStateOf(true) }
-    val appVersion = updateManager.getCurrentVersionName()
-    
-    // 对话框状态
-    var showApiKeyDialog by remember { mutableStateOf(false) }
-    var showApiEndpointDialog by remember { mutableStateOf(false) }
-    var showModelNameDialog by remember { mutableStateOf(false) }
-    var showUserProfileDialog by remember { mutableStateOf(false) }
-    var showAboutDialog by remember { mutableStateOf(false) }
-    var userProfile by remember { mutableStateOf<UserProfile?>(null) }
-    
-    // 加载已保存的配置
-    LaunchedEffect(Unit) {
-        // 加载 API 配置
-        apiKey = configManager.getApiKey().first()
-        apiEndpoint = configManager.getApiEndpoint().first()
-        modelName = configManager.getModelName().first()
-        
-        // 加载压缩配置
-        compressionEnabled = configManager.getCompressionEnabled().first()
-        compressionThreshold = configManager.getCompressionThreshold().first()
-        compressionRatio = configManager.getCompressionRatio().first()
-        
-        // 加载用户画像
-        userProfile = configManager.getUserProfile().first()
-    }
-    
-    // 检查更新函数
-    fun checkForUpdate() {
-        if (isCheckingUpdate) return
-        
-        scope.launch {
-            isCheckingUpdate = true
-            downloadProgress = 0
-            
-            try {
-                val info = updateManager.checkForUpdate()
-                
-                if (info != null) {
-                    versionInfo = info
-                    updateAvailable = true
-                    Toast.makeText(context, "发现新版本 v${info.versionName}", Toast.LENGTH_LONG).show()
-                } else {
-                    updateAvailable = false
-                    Toast.makeText(context, "当前已是最新版本", Toast.LENGTH_SHORT).show()
-                }
-            } catch (e: Exception) {
-                Toast.makeText(context, "检查更新失败: ${e.message}", Toast.LENGTH_SHORT).show()
-            }
-            
-            isCheckingUpdate = false
-        }
-    }
-    
-    // 下载并安装更新函数
-    fun downloadAndInstall() {
-        val info = versionInfo ?: return
-        
-        scope.launch {
-            try {
-                val apkPath = updateManager.downloadApk(info) { progress ->
-                    downloadProgress = progress
-                }
-                
-                downloadProgress = 100
-                Toast.makeText(context, "下载完成，正在安装...", Toast.LENGTH_SHORT).show()
-                
-                // 安装 APK
-                updateManager.installApk(apkPath)
-            } catch (e: Exception) {
-                Toast.makeText(context, "下载失败: ${e.message}", Toast.LENGTH_SHORT).show()
-                downloadProgress = 0
-            }
-        }
-    }
 
     Box(
         modifier = Modifier
@@ -177,32 +125,14 @@ fun MainAppContent() {
                     .weight(1f)
                     .fillMaxWidth()
             ) {
-                // 聊天页面
+// 聊天页面
                 if (selectedTab == 0) {
                     ChatScreen(
                         messages = chatMessages,
                         currentTokenUsage = tokenUsage,
-                        maxTokens = maxTokens,
+                        maxTokens = ChatViewModel.MAX_TOKENS,
                         onSendMessage = { message ->
-                            // 添加用户消息
-                            val userMessage = ChatMessage(
-                                content = message,
-                                isUser = true,
-                                timestamp = System.currentTimeMillis()
-                            )
-                            chatMessages = chatMessages + userMessage
-
-                            // 模拟 AI 回复
-                            val aiMessage = ChatMessage(
-                                content = "收到！我正在处理你的请求...",
-                                isUser = false,
-                                timestamp = System.currentTimeMillis(),
-                                isStreaming = true
-                            )
-                            chatMessages = chatMessages + aiMessage
-
-                            // 更新 token 使用量
-                            tokenUsage = (tokenUsage + message.length).coerceAtMost(maxTokens)
+                            chatViewModel.sendMessage(message)
                         }
                     )
                 }
@@ -295,14 +225,8 @@ onCompressionToggle = { enabled ->
                         onAboutClick = {
                             showAboutDialog = true
                         },
-                        onCheckUpdate = {
-                            if (updateAvailable && versionInfo != null) {
-                                // 已有新版本，直接下载
-                                downloadAndInstall()
-                            } else {
-                                // 检查更新
-                                checkForUpdate()
-                            }
+onCheckUpdate = {
+                            updateViewModel.checkOrDownload()
                         },
                         isCheckingUpdate = isCheckingUpdate,
                         updateAvailable = updateAvailable,
@@ -325,13 +249,9 @@ onCompressionToggle = { enabled ->
         if (showApiKeyDialog) {
             ApiKeyDialog(
                 currentValue = apiKey,
-                onDismiss = { showApiKeyDialog = false },
+                onDismiss = { mainViewModel.hideApiKeyDialog() },
                 onConfirm = { newKey ->
-                    apiKey = newKey
-                    showApiKeyDialog = false
-                    scope.launch {
-                        configManager.saveApiKey(newKey)
-                    }
+                    mainViewModel.saveApiKey(newKey)
                     Toast.makeText(context, "API Key 已保存", Toast.LENGTH_SHORT).show()
                 },
                 validator = configValidator
@@ -341,13 +261,9 @@ onCompressionToggle = { enabled ->
         if (showApiEndpointDialog) {
             ApiEndpointDialog(
                 currentValue = apiEndpoint,
-                onDismiss = { showApiEndpointDialog = false },
+                onDismiss = { mainViewModel.hideApiEndpointDialog() },
                 onConfirm = { newEndpoint ->
-                    apiEndpoint = newEndpoint
-                    showApiEndpointDialog = false
-                    scope.launch {
-                        configManager.saveApiEndpoint(newEndpoint)
-                    }
+                    mainViewModel.saveApiEndpoint(newEndpoint)
                     Toast.makeText(context, "API Endpoint 已保存", Toast.LENGTH_SHORT).show()
                 },
                 validator = configValidator
@@ -357,13 +273,9 @@ onCompressionToggle = { enabled ->
         if (showModelNameDialog) {
             ModelNameDialog(
                 currentValue = modelName,
-                onDismiss = { showModelNameDialog = false },
+                onDismiss = { mainViewModel.hideModelNameDialog() },
                 onConfirm = { newModel ->
-                    modelName = newModel
-                    showModelNameDialog = false
-                    scope.launch {
-                        configManager.saveModelName(newModel)
-                    }
+                    mainViewModel.saveModelName(newModel)
                     Toast.makeText(context, "模型已切换为 $newModel", Toast.LENGTH_SHORT).show()
                 }
             )
@@ -372,13 +284,9 @@ onCompressionToggle = { enabled ->
         if (showUserProfileDialog) {
             UserProfileDialog(
                 initialProfile = userProfile,
-                onDismiss = { showUserProfileDialog = false },
+                onDismiss = { mainViewModel.hideUserProfileDialog() },
                 onSave = { profile ->
-                    userProfile = profile
-                    showUserProfileDialog = false
-                    scope.launch {
-                        configManager.saveUserProfile(profile)
-                    }
+                    mainViewModel.saveUserProfile(profile)
                     Toast.makeText(context, "用户画像已保存", Toast.LENGTH_SHORT).show()
                 }
             )
@@ -387,11 +295,10 @@ onCompressionToggle = { enabled ->
         if (showAboutDialog) {
             AboutDialog(
                 appVersion = appVersion,
-                onDismiss = { showAboutDialog = false }
+                onDismiss = { mainViewModel.hideAboutDialog() }
             )
         }
     }
-
 }
 
 // ==================== Extension Functions ====================
