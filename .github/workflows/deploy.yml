@@ -188,6 +188,9 @@ jobs:
           scp android/app/build/outputs/apk/release/app-release.apk \
             root@8.147.232.175:/www/wwwroot/xintiandi.online/files/chenyi-agent/chenyi-agent-latest.apk
           
+          # 同时创建 release 版本链接
+          ssh root@8.147.232.175 "cp /www/wwwroot/xintiandi.online/files/chenyi-agent/chenyi-agent-latest.apk /www/wwwroot/xintiandi.online/files/chenyi-agent/chenyi-agent-release.apk"
+          
           # 上传 version.json
           scp version.json \
             root@8.147.232.175:/www/wwwroot/xintiandi.online/files/chenyi-agent/version.json

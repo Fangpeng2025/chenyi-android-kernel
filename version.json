@@ -1,6 +1,6 @@
 {
   "versionCode": 10020,
   "versionName": "1.0.20",
-  "apkUrl": "https://oneapi.xintiandi.online/chenyi-agent/chenyi-agent-latest.apk",
+  "apkUrl": "https://oneapi.xintiandi.online/chenyi-agent/chenyi-agent-release.apk",
   "updateLog": "## v1.0.20 更新\n\n### 新增功能\n- ✅ 数据持久化 (DataStore Preferences)\n- ✅ API 配置保存/加载\n- ✅ API Key 格式验证\n- ✅ Endpoint 连接测试\n- ✅ 用户画像增强 (头像、语言、风格、专业领域)\n- ✅ 无障碍服务跳转设置\n- ✅ 关于对话框\n\n### 技术改进\n- 新增 ConfigManager 配置管理器\n- 新增 ConfigValidator 配置验证工具\n- 新增 Coil 图片加载库\n- DataStore 替代 SharedPreferences\n\n### 下载\n- chenyi-agent-latest.apk\n\n官网: https://xintiandi.online\n下载: https://oneapi.xintiandi.online/chenyi-agent/\n"
 }
