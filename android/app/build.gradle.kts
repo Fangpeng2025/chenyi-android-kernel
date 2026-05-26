@@ -13,8 +13,8 @@ defaultConfig {
         applicationId = "com.chenyi.agent"
         minSdk = 29
         targetSdk = 34
-        versionCode = 10019
-        versionName = "1.0.19"
+        versionCode = 10020
+        versionName = "1.0.20"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
@@ -113,6 +113,12 @@ dependencies {
 
     // Coroutines
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
+
+    // DataStore (Preferences)
+    implementation("androidx.datastore:datastore-preferences:1.1.1")
+
+    // Coil (Image Loading)
+    implementation("io.coil-kt:coil-compose:2.7.0")
 
 // JSON
     implementation("org.json:json:20240303")

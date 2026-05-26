@@ -1,7 +1,10 @@
 package com.chenyi.agent
 
 import android.content.Context
+import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
+import android.provider.Settings
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -13,9 +16,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import com.chenyi.agent.data.ConfigManager
+import com.chenyi.agent.data.ConfigValidator
+import com.chenyi.agent.data.UserProfile
 import com.chenyi.agent.ui.components.*
 import com.chenyi.agent.ui.components.TaskStatus
 import com.chenyi.agent.ui.theme.*
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 /**
@@ -48,6 +55,10 @@ fun MainAppContent() {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     
+    // 配置管理器
+    val configManager = remember { ConfigManager(context) }
+    val configValidator = remember { ConfigValidator(context) }
+    
     // 更新管理器
     val updateManager = remember { UpdateManager(context) }
     var isCheckingUpdate by remember { mutableStateOf(false) }
@@ -58,12 +69,12 @@ fun MainAppContent() {
     // 当前选中的标签页
     var selectedTab by remember { mutableStateOf(0) }
 
-// 聊天相关状态
+    // 聊天相关状态
     var chatMessages by remember { mutableStateOf(listOf<ChatMessage>()) }
     var tokenUsage by remember { mutableStateOf(0) }
     val maxTokens = 4096
     
-    // 设置状态
+    // 设置状态（从 DataStore 加载）
     var apiKey by remember { mutableStateOf<String?>(null) }
     var apiEndpoint by remember { mutableStateOf("api.openai.com") }
     var modelName by remember { mutableStateOf("glm-5") }
@@ -72,6 +83,30 @@ fun MainAppContent() {
     var compressionRatio by remember { mutableStateOf(50) }
     var accessibilityEnabled by remember { mutableStateOf(true) }
     val appVersion = updateManager.getCurrentVersionName()
+    
+    // 对话框状态
+    var showApiKeyDialog by remember { mutableStateOf(false) }
+    var showApiEndpointDialog by remember { mutableStateOf(false) }
+    var showModelNameDialog by remember { mutableStateOf(false) }
+    var showUserProfileDialog by remember { mutableStateOf(false) }
+    var showAboutDialog by remember { mutableStateOf(false) }
+    var userProfile by remember { mutableStateOf<UserProfile?>(null) }
+    
+    // 加载已保存的配置
+    LaunchedEffect(Unit) {
+        // 加载 API 配置
+        apiKey = configManager.getApiKey().first()
+        apiEndpoint = configManager.getApiEndpoint().first()
+        modelName = configManager.getModelName().first()
+        
+        // 加载压缩配置
+        compressionEnabled = configManager.getCompressionEnabled().first()
+        compressionThreshold = configManager.getCompressionThreshold().first()
+        compressionRatio = configManager.getCompressionRatio().first()
+        
+        // 加载用户画像
+        userProfile = configManager.getUserProfile().first()
+    }
     
     // 检查更新函数
     fun checkForUpdate() {
@@ -218,32 +253,47 @@ fun MainAppContent() {
                         compressionRatio = compressionRatio,
                         accessibilityEnabled = accessibilityEnabled,
                         appVersion = appVersion,
-                        onApiKeyClick = {
-                            // TODO: 显示 API Key 输入对话框
+onApiKeyClick = {
+                            showApiKeyDialog = true
                         },
                         onApiEndpointClick = {
-                            // TODO: 显示 API Endpoint 输入对话框
+                            showApiEndpointDialog = true
                         },
                         onModelNameClick = {
-                            // TODO: 显示模型选择对话框
+                            showModelNameDialog = true
                         },
                         onUserProfileClick = {
-                            // TODO: 打开用户画像编辑页面
+                            showUserProfileDialog = true
                         },
-                        onCompressionToggle = { enabled ->
+onCompressionToggle = { enabled ->
                             compressionEnabled = enabled
+                            scope.launch {
+                                configManager.saveCompressionEnabled(enabled)
+                            }
                         },
                         onCompressionThresholdChange = { threshold ->
                             compressionThreshold = threshold
+                            scope.launch {
+                                configManager.saveCompressionThreshold(threshold)
+                            }
                         },
                         onCompressionRatioChange = { ratio ->
                             compressionRatio = ratio
+                            scope.launch {
+                                configManager.saveCompressionRatio(ratio)
+                            }
                         },
                         onAccessibilityClick = {
-                            // TODO: 跳转到无障碍服务设置
+                            // 跳转到系统无障碍服务设置
+                            try {
+                                val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
+                                context.startActivity(intent)
+                            } catch (e: Exception) {
+                                Toast.makeText(context, "无法打开无障碍服务设置", Toast.LENGTH_SHORT).show()
+                            }
                         },
                         onAboutClick = {
-                            // TODO: 显示关于对话框
+                            showAboutDialog = true
                         },
                         onCheckUpdate = {
                             if (updateAvailable && versionInfo != null) {
@@ -262,7 +312,7 @@ fun MainAppContent() {
                 }
             }
 
-            // 底部导航栏
+// 底部导航栏
             ModernBottomBar(
                 selectedTab = selectedTab,
                 onTabSelected = { newTab ->
@@ -271,7 +321,76 @@ fun MainAppContent() {
             )
         }
     }
-}
+
+    // 对话框层
+    if (showApiKeyDialog) {
+        ApiKeyDialog(
+            currentValue = apiKey,
+            onDismiss = { showApiKeyDialog = false },
+            onConfirm = { newKey ->
+                apiKey = newKey
+                showApiKeyDialog = false
+                scope.launch {
+                    configManager.saveApiKey(newKey)
+                }
+                Toast.makeText(context, "API Key 已保存", Toast.LENGTH_SHORT).show()
+            },
+            validator = configValidator
+        )
+    }
+
+    if (showApiEndpointDialog) {
+        ApiEndpointDialog(
+            currentValue = apiEndpoint,
+            onDismiss = { showApiEndpointDialog = false },
+            onConfirm = { newEndpoint ->
+                apiEndpoint = newEndpoint
+                showApiEndpointDialog = false
+                scope.launch {
+                    configManager.saveApiEndpoint(newEndpoint)
+                }
+                Toast.makeText(context, "API Endpoint 已保存", Toast.LENGTH_SHORT).show()
+            },
+            validator = configValidator
+        )
+    }
+
+    if (showModelNameDialog) {
+        ModelNameDialog(
+            currentValue = modelName,
+            onDismiss = { showModelNameDialog = false },
+            onConfirm = { newModel ->
+                modelName = newModel
+                showModelNameDialog = false
+                scope.launch {
+                    configManager.saveModelName(newModel)
+                }
+                Toast.makeText(context, "模型已切换为 $newModel", Toast.LENGTH_SHORT).show()
+            }
+        )
+    }
+
+    if (showUserProfileDialog) {
+        UserProfileDialog(
+            initialProfile = userProfile,
+            onDismiss = { showUserProfileDialog = false },
+            onSave = { profile ->
+                userProfile = profile
+                showUserProfileDialog = false
+                scope.launch {
+                    configManager.saveUserProfile(profile)
+                }
+                Toast.makeText(context, "用户画像已保存", Toast.LENGTH_SHORT).show()
+            }
+        )
+    }
+
+    if (showAboutDialog) {
+        AboutDialog(
+            appVersion = appVersion,
+            onDismiss = { showAboutDialog = false }
+        )
+    }
 
 // ==================== Extension Functions ====================
 

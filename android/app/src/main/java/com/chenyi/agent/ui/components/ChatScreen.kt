@@ -153,7 +153,7 @@ private fun ChatHeader() {
                 )
             )
             Text(
-                text = "v1.0.16 • Kernel Ready",
+                text = "v1.0.20 • Kernel Ready",
                 fontSize = 12.sp,
                 fontFamily = FontFamily.Monospace,
                 color = TextMuted

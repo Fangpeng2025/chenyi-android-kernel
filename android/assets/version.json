@@ -1,7 +1,7 @@
 {
-  "versionName": "1.0.19",
-  "versionCode": 10019,
-  "releaseNotes": "【v1.0.19 更新内容】\n\n🎨 底部菜单栏修复\n• 微信风格3标签设计（聊天、技能、设置）\n• 选中状态动画效果\n• 简洁现代的设计\n\n🔧 设置页面实际功能\n• API Key 输入对话框（密码模式）\n• API Endpoint 配置\n• 模型名称配置\n• 用户画像入口\n• 上下文压缩配置\n• 检查更新功能\n\n✨ 用户体验提升\n• 点击即可编辑配置\n• 实时保存配置\n• 清晰的视觉反馈",
+  "versionName": "1.0.20",
+  "versionCode": 10020,
+  "releaseNotes": "【v1.0.20 更新内容】\n\n💾 数据持久化\n• DataStore 保存所有配置（API Key、Endpoint、模型）\n• 应用启动自动加载已保存配置\n• 用户画像完整持久化\n\n✅ 配置验证\n• API Key 格式验证（OpenAI、智谱、Anthropic、DeepSeek）\n• Endpoint 连接测试功能\n• 实时验证反馈\n\n👤 用户画像增强\n• 头像上传功能\n• 语言选择（中文/英文/日文）\n• 响应风格选择（简洁/平衡/详细）\n• 专业领域设置\n\n🔧 功能完善\n• 无障碍服务跳转到系统设置\n• 关于对话框（应用信息+开源许可）\n• 压缩配置持久化\n\n🎨 UI 优化\n• 聊天页版本号修复\n• 对话框交互优化\n• 验证状态可视化",
   "minAndroidVersion": 29,
   "apkSize": 134217728,
   "downloadUrl": "https://oneapi.xintiandi.online/chenyi-agent/chenyi-agent-release.apk",

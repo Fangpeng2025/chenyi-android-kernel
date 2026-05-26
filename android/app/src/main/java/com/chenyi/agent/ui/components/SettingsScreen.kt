@@ -804,7 +804,7 @@ fun SettingsScreenPreview() {
         compressionThreshold = compressionThreshold,
         compressionRatio = compressionRatio,
         accessibilityEnabled = true,
-        appVersion = "1.0.16",
+        appVersion = "1.0.20",
         onApiKeyClick = {},
         onApiEndpointClick = {},
         onModelNameClick = {},
