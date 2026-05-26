@@ -111,10 +111,13 @@ dependencies {
     // Material Icons
     implementation("androidx.compose.material:material-icons-extended")
 
-    // Coroutines
+// Coroutines
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
-
-    // DataStore (Preferences)
+    
+    // ViewModel
+    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.2")
+    
+    // DataStore Preferences
     implementation("androidx.datastore:datastore-preferences:1.1.1")
 
     // Coil (Image Loading)
