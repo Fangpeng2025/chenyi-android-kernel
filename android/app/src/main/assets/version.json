@@ -1,0 +1,7 @@
+{
+  "versionCode": 10022,
+  "versionName": "1.0.22",
+  "releaseDate": "2026-05-26",
+  "updateMessage": "代码质量优化版本\n\n主要更新：\n- 引入 MVVM 架构\n- 优化代码结构和规范\n- 提升性能和稳定性\n- 添加单元测试",
+  "forceUpdate": false
+}
