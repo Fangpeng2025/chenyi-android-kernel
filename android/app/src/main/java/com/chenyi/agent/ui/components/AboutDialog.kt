@@ -85,7 +85,7 @@ fun AboutDialog(
                     modifier = Modifier
                         .fillMaxWidth(0.6f)
                         .height(1.dp)
-                        .background(GradientPrimary)
+                        .background(Brush.linearGradient(GradientPrimary))
                 )
 
                 Spacer(modifier = Modifier.height(24.dp))

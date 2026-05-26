@@ -741,7 +741,7 @@ fun UserProfileDialog(
                                     color = BgTertiary,
                                     shape = CircleShape
                                 )
-                                .clickable { avatarLauncher.launch("image/*") ),
+                                .clickable { avatarLauncher.launch("image/*") },
                             contentAlignment = Alignment.Center
                         ) {
                             if (avatarUri != null) {
@@ -907,7 +907,7 @@ fun UserProfileDialog(
 }
 
 @Composable
-private fun ProfileInputField(
+fun ProfileInputField(
     label: String,
     value: String,
     placeholder: String,
@@ -957,7 +957,7 @@ private fun ProfileInputField(
 }
 
 @Composable
-private fun LanguageChip(
+fun LanguageChip(
     label: String,
     selected: Boolean,
     onClick: () -> Unit
@@ -977,7 +977,7 @@ private fun LanguageChip(
 }
 
 @Composable
-private fun StyleChip(
+fun StyleChip(
     label: String,
     selected: Boolean,
     onClick: () -> Unit
@@ -997,7 +997,7 @@ private fun StyleChip(
 }
 
 @Composable
-private fun ResultIndicator(
+fun ResultIndicator(
     result: ValidationResult? = null,
     message: String? = null,
     isSuccess: Boolean = false,

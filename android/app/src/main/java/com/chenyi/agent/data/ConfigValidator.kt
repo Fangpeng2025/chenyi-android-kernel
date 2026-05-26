@@ -154,7 +154,7 @@ class ConfigValidator(private val context: Context) {
         
         // 检查网络
         if (!isNetworkAvailable()) {
-            return ConnectionTestResult.Error("网络不可用")
+            return@withContext ConnectionTestResult.Error("网络不可用")
         }
         
         try {
