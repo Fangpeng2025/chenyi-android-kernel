@@ -107,9 +107,10 @@ class UpdateManager(private val context: Context) {
             Log.d(TAG, "Checking for updates from $VERSION_URL")
             
             val url = URL(VERSION_URL)
-            val connection = url.openConnection()
+            val connection = url.openConnection() as java.net.HttpURLConnection
             connection.connectTimeout = 10000
             connection.readTimeout = 10000
+            connection.useCaches = false  // 禁用缓存，确保获取最新版本信息
             
             val json = connection.getInputStream().bufferedReader().use { it.readText() }
             Log.d(TAG, "Version info response: $json")
@@ -167,9 +168,10 @@ class UpdateManager(private val context: Context) {
             Log.d(TAG, "Downloading APK from ${versionInfo.downloadUrl}")
             
             val url = URL(versionInfo.downloadUrl)
-            val connection = url.openConnection()
+            val connection = url.openConnection() as java.net.HttpURLConnection
             connection.connectTimeout = 30000
             connection.readTimeout = 30000
+            connection.useCaches = false  // 禁用缓存
             
             val fileLength = connection.contentLengthLong
             Log.d(TAG, "APK size: $fileLength bytes")
