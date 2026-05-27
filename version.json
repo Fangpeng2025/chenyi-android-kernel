@@ -1,7 +1,7 @@
 {
-  "versionCode": 10023,
-  "versionName": "1.0.23",
-  "apkUrl": "https://oneapi.xintiandi.online/chenyi-agent/chenyi-agent-v1.0.23.apk",
-  "updateLog": "## v1.0.23 更新\n\n### 修复\n- ✅ 修复版本检查缓存问题 (useCaches=false)\n- ✅ 确保每次检查都能获取最新版本信息\n\n### 功能\n- API 配置对话框（带验证）\n- 用户画像对话框（头像、语言、风格）\n- 数据持久化（DataStore）\n- 配置验证功能\n\n官网: https://xintiandi.online\n下载: https://oneapi.xintiandi.online/chenyi-agent/\n",
+  "versionCode": 110,
+  "versionName": "0.1.10",
+  "apkUrl": "https://oneapi.xintiandi.online/chenyi-agent/chenyi-agent-v0.1.10.apk",
+  "updateLog": "v0.1.10 (versionCode 110)\n- 修复: 点击技能页面崩溃问题\n- listPlugins/toggleTool 添加异常捕获\n- 修复: UpdateManager useCaches=false 禁用缓存，确保版本检查获取最新信息",
   "forceUpdate": false
 }

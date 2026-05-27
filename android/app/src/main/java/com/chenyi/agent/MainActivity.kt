@@ -184,16 +184,16 @@ fun MainAppContent() {
                         accessibilityEnabled = accessibilityEnabled,
                         appVersion = appVersion,
 onApiKeyClick = {
-                            showApiKeyDialog = true
+                            mainViewModel.showApiKeyDialog()
                         },
                         onApiEndpointClick = {
-                            showApiEndpointDialog = true
+                            mainViewModel.showApiEndpointDialog()
                         },
                         onModelNameClick = {
-                            showModelNameDialog = true
+                            mainViewModel.showModelNameDialog()
                         },
                         onUserProfileClick = {
-                            showUserProfileDialog = true
+                            mainViewModel.showUserProfileDialog()
                         },
 onCompressionToggle = { enabled ->
                             compressionEnabled = enabled
@@ -222,8 +222,8 @@ onCompressionToggle = { enabled ->
                                 Toast.makeText(context, "无法打开无障碍服务设置", Toast.LENGTH_SHORT).show()
                             }
                         },
-                        onAboutClick = {
-                            showAboutDialog = true
+onAboutClick = {
+                            mainViewModel.showAboutDialog()
                         },
 onCheckUpdate = {
                             updateViewModel.checkOrDownload()

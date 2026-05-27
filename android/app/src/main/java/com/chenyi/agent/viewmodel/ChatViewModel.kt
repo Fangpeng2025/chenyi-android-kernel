@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import com.chenyi.agent.ui.components.ChatMessage
 
 /**
  * 聊天 ViewModel - 管理聊天状态和逻辑
@@ -60,13 +61,12 @@ class ChatViewModel : ViewModel() {
         val aiMessage = ChatMessage(
             content = "收到！我正在处理你的请求...",
             isUser = false,
-            timestamp = System.currentTimeMillis(),
-            status = TaskStatus.COMPLETED
+            timestamp = System.currentTimeMillis()
         )
         _messages.value = _messages.value + aiMessage
         
         // 更新 token 使用量（模拟）
-        _tokenUsage.value = (_tokenUsage.value + userMessage.length / 4).coerceAtMost(MAX_TOKENS))
+        _tokenUsage.value = (_tokenUsage.value + userMessage.length / 4).coerceAtMost(MAX_TOKENS)
         
         _isLoading.value = false
     }
@@ -86,29 +86,8 @@ class ChatViewModel : ViewModel() {
         val toolMessage = ChatMessage(
             content = "🔧 $toolName: $result",
             isUser = false,
-            timestamp = System.currentTimeMillis(),
-            status = TaskStatus.COMPLETED
+            timestamp = System.currentTimeMillis()
         )
         _messages.value = _messages.value + toolMessage
     }
-}
-
-/**
- * 聊天消息数据类
- */
-data class ChatMessage(
-    val content: String,
-    val isUser: Boolean,
-    val timestamp: Long,
-    val status: TaskStatus = TaskStatus.PENDING
-)
-
-/**
- * 任务状态枚举
- */
-enum class TaskStatus {
-    PENDING,
-    IN_PROGRESS,
-    COMPLETED,
-    FAILED
 }

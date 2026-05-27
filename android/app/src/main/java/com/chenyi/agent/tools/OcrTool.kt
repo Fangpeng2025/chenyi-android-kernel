@@ -34,17 +34,17 @@ class OcrTool(
             val ocrResult = ocrEngine.recognize(bitmap)
             
             val result = JSONObject().apply {
-                put("text", ocrResult.text)
+                put("text", ocrResult.fullText)
                 put("blocks", JSONObject().apply {
-                    ocrResult.textBlocks.forEachIndexed { index, block ->
+                    ocrResult.words.forEachIndexed { index, word ->
                         put("block_$index", JSONObject().apply {
-                            put("text", block.text)
-                            put("confidence", block.confidence)
+                            put("text", word.text)
+                            put("confidence", word.confidence)
                             put("box", JSONObject().apply {
-                                put("left", block.box.left)
-                                put("top", block.box.top)
-                                put("right", block.box.right)
-                                put("bottom", block.box.bottom)
+                                put("left", word.x)
+                                put("top", word.y)
+                                put("right", word.x + word.width)
+                                put("bottom", word.y + word.height)
                             })
                         })
                     }
@@ -91,18 +91,18 @@ class OcrTool(
             val ocrResult = ocrEngine.recognize(bitmap)
             
             val matches = mutableListOf<JSONObject>()
-            ocrResult.textBlocks.forEach { block ->
-                if (block.text.contains(searchText, ignoreCase = true)) {
+            ocrResult.words.forEach { word ->
+                if (word.text.contains(searchText, ignoreCase = true)) {
                     matches.add(JSONObject().apply {
-                        put("text", block.text)
-                        put("confidence", block.confidence)
-                        put("center_x", (block.box.left + block.box.right) / 2)
-                        put("center_y", (block.box.top + block.box.bottom) / 2)
+                        put("text", word.text)
+                        put("confidence", word.confidence)
+                        put("center_x", word.x + word.width / 2)
+                        put("center_y", word.y + word.height / 2)
                         put("box", JSONObject().apply {
-                            put("left", block.box.left)
-                            put("top", block.box.top)
-                            put("right", block.box.right)
-                            put("bottom", block.box.bottom)
+                            put("left", word.x)
+                            put("top", word.y)
+                            put("right", word.x + word.width)
+                            put("bottom", word.y + word.height)
                         })
                     })
                 }

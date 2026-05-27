@@ -3,6 +3,7 @@ package com.chenyi.agent.repository
 import com.chenyi.agent.data.ConfigManager
 import com.chenyi.agent.data.UserProfile
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 
 /**
@@ -20,7 +21,7 @@ class ConfigRepository(
      * 获取 API Key
      */
     suspend fun getApiKey(): String = withContext(Dispatchers.IO) {
-        configManager.getApiKey()
+        configManager.getApiKey().first() ?: ""
     }
     
     /**
@@ -34,7 +35,7 @@ class ConfigRepository(
      * 获取 API Endpoint
      */
     suspend fun getApiEndpoint(): String = withContext(Dispatchers.IO) {
-        configManager.getApiEndpoint()
+        configManager.getApiEndpoint().first()
     }
     
     /**
@@ -48,7 +49,7 @@ class ConfigRepository(
      * 获取 Model Name
      */
     suspend fun getModelName(): String = withContext(Dispatchers.IO) {
-        configManager.getModelName()
+        configManager.getModelName().first()
     }
     
     /**
@@ -62,7 +63,7 @@ class ConfigRepository(
      * 获取用户画像
      */
     suspend fun getUserProfile(): UserProfile = withContext(Dispatchers.IO) {
-        configManager.getUserProfile()
+        configManager.getUserProfile().first()
     }
     
     /**
