@@ -7,6 +7,7 @@ import com.chenyi.agent.data.UserProfile
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 /**
@@ -77,10 +78,10 @@ class MainViewModel(
             _isLoading.value = true
             try {
                 // 加载配置
-                _apiKey.value = configManager.getApiKey()
-                _apiEndpoint.value = configManager.getApiEndpoint()
-                _modelName.value = configManager.getModelName()
-                _userProfile.value = configManager.getUserProfile()
+                _apiKey.value = configManager.getApiKey().first() ?: ""
+                _apiEndpoint.value = configManager.getApiEndpoint().first()
+                _modelName.value = configManager.getModelName().first()
+                _userProfile.value = configManager.getUserProfile().first()
             } catch (e: Exception) {
                 _errorMessage.value = "加载配置失败: ${e.message}"
             } finally {

@@ -2,6 +2,7 @@ package com.chenyi.agent.utils
 
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import com.chenyi.agent.Constants
 import java.io.ByteArrayOutputStream
 
 /**
